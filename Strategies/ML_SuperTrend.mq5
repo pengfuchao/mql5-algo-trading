@@ -1467,7 +1467,9 @@ int OnCalculate(const int rates_total,
       int sens=(int)Clamp(g_sensitivity,2,MathMin(100.0,(double)(szH-1)));
       int lb  =MathMax(1,(int)(g_sensitivity/10.0));
 
-      BuyBuf[i]=0.0;SellBuf[i]=0.0;ConfBuf[i]=0.0;
+      if(i != 0 || BuyBuf[i] == 0.0) BuyBuf[i]=0.0;
+      if(i != 0 || SellBuf[i] == 0.0) SellBuf[i]=0.0;
+      if(i != 0 || ConfBuf[i] == 0.0) ConfBuf[i]=0.0;
       if(szH<sens+lb){g_sig_trend_prev=g_sig_trend;continue;}
 
       double hiNow=QMax(g_highs,sens);
@@ -1577,7 +1579,12 @@ int OnCalculate(const int rates_total,
             SendSignalAlert(true, barNum);
          }
       }
-      else{BuyBuf[i]=0.0;SellBuf[i]=0.0;ConfBuf[i]=0.0;}
+      else
+      {
+         if(i != 0 || BuyBuf[i] == 0.0) BuyBuf[i]=0.0;
+         if(i != 0 || SellBuf[i] == 0.0) SellBuf[i]=0.0;
+         if(i != 0 || ConfBuf[i] == 0.0) ConfBuf[i]=0.0;
+      }
 
       g_sig_trend_prev=g_sig_trend;
       dashLastBarNum=barNum; // always track last processed bar
