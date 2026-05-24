@@ -49,3 +49,7 @@
 *   **`Strategy_Turtle_Trading.mq5`**
     *   **功能**: 海龜交易策略。
     *   **說明**: 經典的海龜交易法則實作，包含唐奇安通道突破進場、ATR 波動率倉位計算以及動態止損機制。
+
+*   **`ML_SuperTrend.mq5`**
+    *   **功能**: 自適應機器學習 SuperTrend 決策與信號源指標。
+    *   **說明**: 結合動態市場體制偵測（Hurst Exponent、資訊熵、ADX）、二維上下文記憶網格（Regime Grid）、背景蒙地卡羅模擬探針（Faint Probes）與在線機器學習優化引擎（微批次 BatchFire 與動態 LearnProposals）的高自適應交易信號源。本版本已全面完成「實時動態勝率更新 desync 修復」、「Tick 級 delta 壓力量測優化」、「背景模擬風控防禦系統動態聯動」以及「底層 ArrayCopy 高效率平移優化」，確保回測與實盤表現高度一致且運行流暢。
