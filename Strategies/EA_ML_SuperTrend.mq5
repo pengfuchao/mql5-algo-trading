@@ -15,7 +15,7 @@
 
 // Instantiate trade execution classes
 CTrade         trade;
-CSymbolInfo    symbol;
+CSymbolInfo    g_symbol;
 CPositionInfo  position;
 
 //==========================================================================
@@ -33,6 +33,11 @@ enum ENUM_EA_SIGNAL_MODE
    EA_SignalReversal  = 0,  // Reversal Mode
    EA_SignalBreakout  = 1   // Breakout Mode
 };
+
+//==========================================================================
+// UTILITIES
+//==========================================================================
+double Clamp(double v,double lo,double hi){return MathMax(lo,MathMin(hi,v));}
 
 //==========================================================================
 // INPUT PARAMETERS
@@ -71,7 +76,7 @@ datetime g_lastBarTime = 0;         // Tracks new bar transitions
 int OnInit()
 {
    // 1. Initialize Symbol Info
-   if(!symbol.Name(_Symbol))
+   if(!g_symbol.Name(_Symbol))
    {
       Print("EA_ML_SuperTrend: Failed to initialize symbol information.");
       return INIT_FAILED;
@@ -193,7 +198,7 @@ void OnTick()
       // Check if we are already holding buy positions to avoid duplicate trades
       if(CountOpenPositions(POSITION_TYPE_BUY) == 0)
       {
-         double askPrice = symbol.Ask();
+         double askPrice = g_symbol.Ask();
          double slPrice  = askPrice - (InpSLATRMult * currentATR);
          double tpPrice  = askPrice + (InpTPATRMult * currentATR);
          
@@ -215,7 +220,7 @@ void OnTick()
       // Check if we are already holding sell positions to avoid duplicate trades
       if(CountOpenPositions(POSITION_TYPE_SELL) == 0)
       {
-         double bidPrice = symbol.Bid();
+         double bidPrice = g_symbol.Bid();
          double slPrice  = bidPrice + (InpSLATRMult * currentATR);
          double tpPrice  = bidPrice - (InpTPATRMult * currentATR);
          
@@ -261,7 +266,7 @@ void ManageTrailingStop()
                if(stBull > 0 && (currentSL < stBull || currentSL == 0))
                {
                   // Modify Position Stop Loss
-                  if(stBull < symbol.Bid() - symbol.StopsLevel() * _Point)
+                  if(stBull < g_symbol.Bid() - g_symbol.StopsLevel() * _Point)
                   {
                      trade.PositionModify(position.Ticket(), NormalizeDouble(stBull, _Digits), position.TakeProfit());
                   }
@@ -274,7 +279,7 @@ void ManageTrailingStop()
                if(stBear > 0 && (currentSL > stBear || currentSL == 0))
                   {
                   // Modify Position Stop Loss
-                  if(stBear > symbol.Ask() + symbol.StopsLevel() * _Point)
+                  if(stBear > g_symbol.Ask() + g_symbol.StopsLevel() * _Point)
                   {
                      trade.PositionModify(position.Ticket(), NormalizeDouble(stBear, _Digits), position.TakeProfit());
                   }
@@ -298,8 +303,8 @@ double CalculateLotSize(double slDistance, double confidence)
       double riskValue = balance * (InpRiskPercent / 100.0);
       
       // Get tick value and tick size
-      double tickValue = symbol.TickValue();
-      double tickSize  = symbol.TickSize();
+      double tickValue = g_symbol.TickValue();
+      double tickSize  = g_symbol.TickSize();
       
       if(tickSize > 0 && slDistance > 0)
       {
@@ -318,9 +323,9 @@ double CalculateLotSize(double slDistance, double confidence)
    }
    
    // Enforce Broker minimum/maximum lot parameters
-   double minLot = symbol.LotsMin();
-   double maxLot = symbol.LotsMax();
-   double lotStep = symbol.LotsStep();
+   double minLot = g_symbol.LotsMin();
+   double maxLot = g_symbol.LotsMax();
+   double lotStep = g_symbol.LotsStep();
    
    lot = MathRound(lot / lotStep) * lotStep;
    lot = Clamp(lot, minLot, maxLot);
