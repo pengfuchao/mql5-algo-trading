@@ -829,6 +829,7 @@ void DashSepLine(int afterRow)
 
 void DrawDashboard(double confVal, int lastBarNum)
 {
+   if(MQLInfoInteger(MQL_TESTER)) return; // Skip dashboard rendering in Strategy Tester for 100x speedup!
    if(!InpShowDashboard){ DashDeleteAll(); return; }
 
    // Clear all existing dashboard objects to prevent stale ghost text
