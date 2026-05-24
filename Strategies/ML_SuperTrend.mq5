@@ -723,7 +723,9 @@ bool CanTrade(int barNum)
 }
 void ApplyRiskGuard(double pnl,int barNum,bool isSimulated)
 {
-   if(!isSimulated) g_tradesSession++;
+   if(isSimulated) return; // Ignore virtual background probes for Risk Guard lockouts to prevent blocking real trades!
+   
+   g_tradesSession++;
    g_sessionPnL+=pnl;
    if(pnl<0)
    {
