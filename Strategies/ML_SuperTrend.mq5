@@ -721,9 +721,10 @@ bool CanTrade(int barNum)
           g_sessionPnL>InpMaxSessionLoss&&
           g_consecLosses<InpMaxConsecLosses;
 }
-void ApplyRiskGuard(double pnl,int barNum)
+void ApplyRiskGuard(double pnl,int barNum,bool isSimulated)
 {
-   g_tradesSession++;g_sessionPnL+=pnl;
+   if(!isSimulated) g_tradesSession++;
+   g_sessionPnL+=pnl;
    if(pnl<0)
    {
       g_consecLosses++;
@@ -735,7 +736,7 @@ void ApplyRiskGuard(double pnl,int barNum)
       }
       else g_cooldownUntil=barNum+InpBaseCooldownBars;
    }
-   else g_consecLosses=0;
+   else if(pnl>0) g_consecLosses=0;
 }
 
 //==========================================================================
@@ -1313,7 +1314,7 @@ int OnCalculate(const int rates_total,
                BatchSample bs;bs.atr_ret=lAtr;bs.mae_atr=lMae;bs.pnl_usd=lUsd;bs.conf=gc;
                QPushB(g_batchL,bs,200);
             }
-            ApplyRiskGuard(lUsd, barNum); // Feed simulated Long probe PnL to Risk Guard
+            ApplyRiskGuard(lUsd, barNum, true); // Feed simulated Long probe PnL to Risk Guard
          }
          if(sClosed&&sUsd!=EMPTY_VALUE)
          {
@@ -1329,7 +1330,7 @@ int OnCalculate(const int rates_total,
                BatchSample bs;bs.atr_ret=sAtr;bs.mae_atr=sMae;bs.pnl_usd=sUsd;bs.conf=gc;
                QPushB(g_batchS,bs,200);
             }
-            ApplyRiskGuard(sUsd, barNum); // Feed simulated Short probe PnL to Risk Guard
+            ApplyRiskGuard(sUsd, barNum, true); // Feed simulated Short probe PnL to Risk Guard
          }
 
          // Evaluate outcomes of actual signals as they mature (5-bar holding)
@@ -1559,7 +1560,7 @@ int OnCalculate(const int rates_total,
          OpenProbe(g_actualSigsS, -1, c_, cATR, barNum); // Open actual Sell signal probe
          if(i==0)
          {
-            ApplyRiskGuard(0.0, barNum);
+            ApplyRiskGuard(0.0, barNum, false);
             SendSignalAlert(false, barNum);
          }
       }
@@ -1571,7 +1572,7 @@ int OnCalculate(const int rates_total,
          OpenProbe(g_actualSigsL, +1, c_, cATR, barNum); // Open actual Buy signal probe
          if(i==0)
          {
-            ApplyRiskGuard(0.0, barNum);
+            ApplyRiskGuard(0.0, barNum, false);
             SendSignalAlert(true, barNum);
          }
       }
