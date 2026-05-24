@@ -262,26 +262,34 @@ void ManageTrailingStop()
             // ── Trailing Long Positions ──────────────────────────
             if(position.PositionType() == POSITION_TYPE_BUY)
             {
+               double newSL = NormalizeDouble(stBull, _Digits);
                // If SuperTrend Bull line is active and is higher than the current SL (or no SL is set)
                if(stBull > 0 && (currentSL < stBull || currentSL == 0))
                {
-                  // Modify Position Stop Loss
-                  if(stBull < SymbolInfoDouble(_Symbol, SYMBOL_BID) - g_symbol.StopsLevel() * _Point)
+                  if(newSL != NormalizeDouble(currentSL, _Digits))
                   {
-                     trade.PositionModify(position.Ticket(), NormalizeDouble(stBull, _Digits), position.TakeProfit());
+                     // Modify Position Stop Loss
+                     if(stBull < SymbolInfoDouble(_Symbol, SYMBOL_BID) - g_symbol.StopsLevel() * _Point)
+                     {
+                        trade.PositionModify(position.Ticket(), newSL, position.TakeProfit());
+                     }
                   }
                }
             }
             // ── Trailing Short Positions ──────────────────────────
             else if(position.PositionType() == POSITION_TYPE_SELL)
             {
+               double newSL = NormalizeDouble(stBear, _Digits);
                // If SuperTrend Bear line is active and is lower than the current SL (or no SL is set)
                if(stBear > 0 && (currentSL > stBear || currentSL == 0))
+               {
+                  if(newSL != NormalizeDouble(currentSL, _Digits))
                   {
-                  // Modify Position Stop Loss
-                  if(stBear > SymbolInfoDouble(_Symbol, SYMBOL_ASK) + g_symbol.StopsLevel() * _Point)
-                  {
-                     trade.PositionModify(position.Ticket(), NormalizeDouble(stBear, _Digits), position.TakeProfit());
+                     // Modify Position Stop Loss
+                     if(stBear > SymbolInfoDouble(_Symbol, SYMBOL_ASK) + g_symbol.StopsLevel() * _Point)
+                     {
+                        trade.PositionModify(position.Ticket(), newSL, position.TakeProfit());
+                     }
                   }
                }
             }
