@@ -53,3 +53,7 @@
 *   **`ML_SuperTrend.mq5`**
     *   **功能**: 自適應機器學習 SuperTrend 決策與信號源指標。
     *   **說明**: 結合動態市場體制偵測（Hurst Exponent、資訊熵、ADX）、二維上下文記憶網格（Regime Grid）、背景蒙地卡羅模擬探針（Faint Probes）與在線機器學習優化引擎（微批次 BatchFire 與動態 LearnProposals）的高自適應交易信號源。本版本已全面完成「實時動態勝率更新 desync 修復」、「Tick 級 delta 壓力量測優化」、「背景模擬風控防禦系統動態聯動」以及「底層 ArrayCopy 高效率平移優化」，確保回測與實盤表現高度一致且運行流暢。
+
+*   **`EA_ML_SuperTrend.mq5`**
+    *   **功能**: 自適應機器學習 SuperTrend 自動化交易智能交易系統 (EA)。
+    *   **說明**: 專為對沖帳戶設計的自動化交易機器人，用於對接 `ML_SuperTrend` 信號源。支持三種高級資金管理（固定手數、基於 ATR 的淨值百分比風險手數、置信度比例手數），內置動態 ATR 止損止盈，以及基於指標軌跡線的移動止損 (Trailing Stop) 機械式出場，可在 MT5 策略測試器中生成完整的交易報告與資產淨值曲線。
