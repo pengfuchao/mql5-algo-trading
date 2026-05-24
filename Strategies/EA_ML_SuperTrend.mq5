@@ -198,7 +198,7 @@ void OnTick()
       // Check if we are already holding buy positions to avoid duplicate trades
       if(CountOpenPositions(POSITION_TYPE_BUY) == 0)
       {
-         double askPrice = g_symbol.Ask();
+         double askPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
          double slPrice  = askPrice - (InpSLATRMult * currentATR);
          double tpPrice  = askPrice + (InpTPATRMult * currentATR);
          
@@ -220,7 +220,7 @@ void OnTick()
       // Check if we are already holding sell positions to avoid duplicate trades
       if(CountOpenPositions(POSITION_TYPE_SELL) == 0)
       {
-         double bidPrice = g_symbol.Bid();
+         double bidPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
          double slPrice  = bidPrice + (InpSLATRMult * currentATR);
          double tpPrice  = bidPrice - (InpTPATRMult * currentATR);
          
@@ -266,7 +266,7 @@ void ManageTrailingStop()
                if(stBull > 0 && (currentSL < stBull || currentSL == 0))
                {
                   // Modify Position Stop Loss
-                  if(stBull < g_symbol.Bid() - g_symbol.StopsLevel() * _Point)
+                  if(stBull < SymbolInfoDouble(_Symbol, SYMBOL_BID) - g_symbol.StopsLevel() * _Point)
                   {
                      trade.PositionModify(position.Ticket(), NormalizeDouble(stBull, _Digits), position.TakeProfit());
                   }
@@ -279,7 +279,7 @@ void ManageTrailingStop()
                if(stBear > 0 && (currentSL > stBear || currentSL == 0))
                   {
                   // Modify Position Stop Loss
-                  if(stBear > g_symbol.Ask() + g_symbol.StopsLevel() * _Point)
+                  if(stBear > SymbolInfoDouble(_Symbol, SYMBOL_ASK) + g_symbol.StopsLevel() * _Point)
                   {
                      trade.PositionModify(position.Ticket(), NormalizeDouble(stBear, _Digits), position.TakeProfit());
                   }
@@ -302,11 +302,11 @@ double CalculateLotSize(double slDistance, double confidence)
       double balance = AccountInfoDouble(ACCOUNT_BALANCE);
       double riskValue = balance * (InpRiskPercent / 100.0);
       
-      // Get tick value and tick size
-      double tickValue = g_symbol.TickValue();
-      double tickSize  = g_symbol.TickSize();
+      // Get tick value and tick size safely
+      double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+      double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
       
-      if(tickSize > 0 && slDistance > 0)
+      if(tickSize > 0 && slDistance > 0 && tickValue > 0)
       {
          // Standard quantitative formula: Lot = RiskValue / (SL_distance_in_points * TickValue)
          lot = riskValue / ((slDistance / tickSize) * tickValue);
@@ -327,8 +327,14 @@ double CalculateLotSize(double slDistance, double confidence)
    double maxLot = g_symbol.LotsMax();
    double lotStep = g_symbol.LotsStep();
    
-   lot = MathRound(lot / lotStep) * lotStep;
-   lot = Clamp(lot, minLot, maxLot);
+   if(lotStep > 0)
+   {
+      lot = MathRound(lot / lotStep) * lotStep;
+   }
+   if(minLot > 0 && maxLot > 0)
+   {
+      lot = Clamp(lot, minLot, maxLot);
+   }
    
    return lot;
 }
