@@ -1187,8 +1187,7 @@ int OnCalculate(const int rates_total,
       ArrayInitialize(ConfBuf,0.0);
    }
 
-   int startIdx=(prev_calculated==0)?(rates_total-2):(rates_total-prev_calculated);
-   if(startIdx>=rates_total)startIdx=rates_total-2;
+   int startIdx=(prev_calculated==0)?(rates_total-2):0;
 
    // For dashboard
    double dashWRL=0.5, dashWRS=0.5, dashConf=0.0;
