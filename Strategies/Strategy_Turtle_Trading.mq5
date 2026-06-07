@@ -7,7 +7,9 @@
 
 #include <Trade\Trade.mqh>
 
-input double Lots                 = 0.1;     // 指定交易的固定手數
+input bool   UseATRSizing         = true;    // 啟用 ATR 動態倉位 (海龜法則)
+input double RiskPercent          = 1.0;     // 每單位風險：1N 波動對應的淨值百分比
+input double Lots                 = 0.1;     // 固定手數 (UseATRSizing=false 時使用)
 input int    MaxUnits             = 3;       // 每個貨幣對的最大交易單位數
 input ulong  MagicNumber          = 11282;
 input int    EntryLookBack        = 55;      // 回溯計算突破價格的柱數
@@ -25,6 +27,44 @@ int atrHandle;
 double LastEMAX_Base = 0;
 double LastEMIN_Base = 0;
 datetime lastBarTime = 0;
+
+//+------------------------------------------------------------------+
+//| 手數正規化 (向下取整至 step，並夾在 min/max 之間)                |
+//+------------------------------------------------------------------+
+double NormalizeLots(double lots)
+  {
+   double minLot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MAX);
+   double step   = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
+   if(step <= 0) step = (minLot > 0 ? minLot : 0.01);
+
+   lots = MathFloor(lots / step) * step;   // 向下取整，避免超出設定風險
+   if(lots < minLot) lots = minLot;
+   if(lots > maxLot) lots = maxLot;
+   return lots;
+  }
+
+//+------------------------------------------------------------------+
+//| 海龜單位倉位：使 1N 的不利波動 ≈ RiskPercent% 淨值              |
+//|   Unit = (RiskPercent% * Equity) / (N * 每點價值)               |
+//|   止損為 SLMultiple*N，故單一單位最大虧損 ≈ SLMultiple*RiskPct% |
+//+------------------------------------------------------------------+
+double GetUnitLots(double N)
+  {
+   if(!UseATRSizing) return NormalizeLots(Lots);
+
+   double tickValue = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
+   double tickSize  = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_SIZE);
+   if(N <= 0 || tickValue <= 0 || tickSize <= 0) return NormalizeLots(Lots);
+
+   double valuePerPriceUnitPerLot = tickValue / tickSize;       // 每 1.0 價格波動、每手的金額
+   double dollarVolPerLot = N * valuePerPriceUnitPerLot;        // 每手在 1N 波動下的金額風險
+   if(dollarVolPerLot <= 0) return NormalizeLots(Lots);
+
+   double equity     = AccountInfoDouble(ACCOUNT_EQUITY);
+   double riskAmount = (RiskPercent / 100.0) * equity;
+   return NormalizeLots(riskAmount / dollarVolPerLot);
+  }
 
 //+------------------------------------------------------------------+
 //| 新 K 線判斷                                                      |
@@ -71,6 +111,9 @@ void OnTick()
 
    // 經紀商最小停損/掛單距離 (避免 [Invalid stops] 拒單)
    double stopsLevel = (double)SymbolInfoInteger(Symbol(), SYMBOL_TRADE_STOPS_LEVEL) * _Point;
+
+   // 依當前波動率 (N) 與淨值計算每單位手數 (海龜動態倉位)
+   double unitLots = GetUnitLots(N);
 
    // 判斷 Pip 乘數 (將 Points 轉為標準 Pips)
    double pipMultiplier = 1.0;
@@ -155,7 +198,7 @@ void OnTick()
       double nextSL = NormalizeDouble(nextBuyPrice - MathMax(N * SLMultiple, stopsLevel), _Digits);
       // BuyStop 須高於 Ask 至少 stopsLevel，否則經紀商拒單
       if(SymbolInfoDouble(Symbol(), SYMBOL_ASK) + stopsLevel < nextBuyPrice)
-         trade.BuyStop(Lots, nextBuyPrice, Symbol(), nextSL, 0, ORDER_TIME_GTC, 0, "Turtle Add Buy");
+         trade.BuyStop(unitLots, nextBuyPrice, Symbol(), nextSL, 0, ORDER_TIME_GTC, 0, "Turtle Add Buy");
      }
    if(sellPositions > 0 && sellPositions < MaxUnits && sellStopTicket == 0)
      {
@@ -163,7 +206,7 @@ void OnTick()
       double nextSL = NormalizeDouble(nextSellPrice + MathMax(N * SLMultiple, stopsLevel), _Digits);
       // SellStop 須低於 Bid 至少 stopsLevel，否則經紀商拒單
       if(SymbolInfoDouble(Symbol(), SYMBOL_BID) - stopsLevel > nextSellPrice)
-         trade.SellStop(Lots, nextSellPrice, Symbol(), nextSL, 0, ORDER_TIME_GTC, 0, "Turtle Add Sell");
+         trade.SellStop(unitLots, nextSellPrice, Symbol(), nextSL, 0, ORDER_TIME_GTC, 0, "Turtle Add Sell");
      }
 
    // 4. 新 K 線核心判斷：進場掛單與追蹤止損
@@ -197,7 +240,7 @@ void OnTick()
          if(SymbolInfoDouble(Symbol(), SYMBOL_ASK) + stopsLevel < trueEMAX)
            {
             if(buyStopTicket > 0) trade.OrderDelete(buyStopTicket);
-            trade.BuyStop(Lots, trueEMAX, Symbol(), bStopLoss, 0, ORDER_TIME_GTC, 0, "Turtle BuyStop");
+            trade.BuyStop(unitLots, trueEMAX, Symbol(), bStopLoss, 0, ORDER_TIME_GTC, 0, "Turtle BuyStop");
             LastEMAX_Base = EMAX;
            }
         }
@@ -206,7 +249,7 @@ void OnTick()
          if(SymbolInfoDouble(Symbol(), SYMBOL_BID) - stopsLevel > trueEMIN)
            {
             if(sellStopTicket > 0) trade.OrderDelete(sellStopTicket);
-            trade.SellStop(Lots, trueEMIN, Symbol(), sStopLoss, 0, ORDER_TIME_GTC, 0, "Turtle SellStop");
+            trade.SellStop(unitLots, trueEMIN, Symbol(), sStopLoss, 0, ORDER_TIME_GTC, 0, "Turtle SellStop");
             LastEMIN_Base = EMIN;
            }
         }
