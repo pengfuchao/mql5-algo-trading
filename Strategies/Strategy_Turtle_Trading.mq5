@@ -24,6 +24,7 @@ input double SLMultiple           = 2.5;     // 止損 ATR 倍數
 input double ReEntryMultiple      = 0.5;     // 重新進場 ATR 倍數
 input bool   ATRBreakEven         = false;   // 移至保本水平
 input double BreakEvenMultiple    = 2.5;     // 保本點 ATR 倍數
+input int    OptMinTrades         = 30;      // 最佳化評分：最少交易筆數門檻 (過擬合防護)
 
 CTrade trade;
 int atrHandle;
@@ -324,5 +325,30 @@ void OnTick()
            }
         }
      }
+  }
+
+//+------------------------------------------------------------------+
+//| 自訂最佳化評分                                                   |
+//|   目標：高報酬 + 低回撤 + 樣本足夠 (穩健、非孤峰)               |
+//|   分數 = 恢復因子 × 獲利因子 × √交易筆數                        |
+//|   - 恢復因子 = 淨利 / 最大回撤 (報酬對風險)                     |
+//|   - 獲利因子 = 毛利 / 毛損   (賺賠品質)                         |
+//|   - √交易筆數：鼓勵樣本數，抑制少量交易的僥倖高分               |
+//+------------------------------------------------------------------+
+double OnTester()
+  {
+   double netProfit    = TesterStatistics(STAT_PROFIT);
+   double ddPercent    = TesterStatistics(STAT_EQUITYDD_PERCENT);
+   double profitFactor = TesterStatistics(STAT_PROFIT_FACTOR);
+   double recovery     = TesterStatistics(STAT_RECOVERY_FACTOR);
+   int    trades       = (int)TesterStatistics(STAT_TRADES);
+
+   // 過擬合防護：交易筆數不足、淨虧損、或無回撤(異常) 一律判 0，最佳化自動淘汰
+   if(trades < OptMinTrades || netProfit <= 0.0 || ddPercent <= 0.0)
+      return 0.0;
+
+   double score = recovery * profitFactor * MathSqrt((double)trades);
+   if(score < 0.0 || !MathIsValidNumber(score)) score = 0.0;
+   return score;
   }
 //+------------------------------------------------------------------+
