@@ -5,6 +5,51 @@
 //|  讀取指標的 Resistance/Support Broken 訊號 buffer (已收盤棒)，    |
 //|  以順勢突破方向進場，ATR 止損 + RR 止盈，風險% 動態手數。         |
 //+------------------------------------------------------------------+
+//
+// 已知限制與未來優化方向（2026-06-25 review）
+// -------------------------------------------------------------------
+// 1. MagicNumber ownership
+//    - 目前未禁止 InpMagic=0；MT5 人工交易通常使用 MagicNumber 0。
+//    - 若設為 0，EA 可能把人工部位視為自有部位並納入計數或反向平倉。
+//    - 未來應在 OnInit() 拒絕 InpMagic=0，或建立更明確的 ownership policy。
+//
+// 2. Risk sizing 精度
+//    - 目前以 SYMBOL_TRADE_TICK_VALUE / SYMBOL_TRADE_TICK_SIZE 估算 SL 金額風險。
+//    - 對部分 CFD、期貨、交叉貨幣或特殊計價商品，估算值可能偏離帳戶貨幣
+//      中的實際損失。
+//    - 未來建議使用 OrderCalcProfit()，分別以 Buy/Sell、實際 entry 與 SL
+//      計算 1 lot 的預期損失，再由風險金額反推手數。
+//
+// 3. Netting/Exchange account ownership
+//    - 現行防護以 position 的 POSITION_MAGIC 判斷是否屬於本 EA。
+//    - Netting position 可能由多筆不同 MagicNumber 或人工 deals 合併，
+//      單一 POSITION_MAGIC 無法完整證明整個淨部位的 ownership。
+//    - 最安全的未來方案是限定 Hedging account，或要求 Netting symbol
+//      完全由本 EA 獨占，並以 deal history 建立更嚴格的來源驗證。
+//
+// 4. 市價成交、滑點與成交後驗證
+//    - lots、SL、TP 依送單前的 Bid/Ask 計算；實際成交價可能因滑點不同。
+//    - 成交後的真實風險可能偏離 InpRiskPercent，SL/TP 也可能需要重新驗證。
+//    - 未來可加入 OrderCheck()，並在成交後核對 deal price、position volume、
+//      SL/TP 與實際帳戶貨幣風險；若超限，採取明確的 fail-safe 行為。
+//
+// 5. Fixed-lot normalization
+//    - 固定手數模式目前會將低於 broker minimum 的正數提高到 minimum lot。
+//    - 這是有效成交量正規化，但可能高於使用者原始設定。
+//    - 未來可改成嚴格模式：設定低於 minimum 或不符合 volume step 時拒絕交易，
+//      或至少輸出 requested lots 與 normalized lots 的明確警告。
+//
+// 6. 上游 Indicator 與 TradingView 差異
+//    - Support_Resistance_Channels.mq5 採已收盤棒、每根新棒重建通道；
+//      Pine 原版使用 stateful pivot arrays，且只在新 pivot 確認時重建通道。
+//    - 因此兩者不是 signal-identical，MT5 與 TradingView breakout 日期可能不同。
+//    - 未來若追求 Pine 等價性，需另行設計 stateful 模式；若供 EA 使用，
+//      應保留 causal/closed-bar 模式並以獨立選項明確區分。
+//
+// 以上為後續 hardening / research 項目，不代表目前已完成實作或驗證。
+// 在 live trading 前仍需 Strategy Tester、demo forward test、不同商品與
+// broker constraints、spread、commission、slippage及 market regime 驗證。
+// -------------------------------------------------------------------
 #property copyright "Jimmy"
 #property version   "1.00"
 

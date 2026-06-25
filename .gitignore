@@ -5,3 +5,6 @@
 .agents/
 .claude/
 .codex/
+
+# Third-party reference code (not studied/optimized; kept out of the repo)
+testing/
