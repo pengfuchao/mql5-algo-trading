@@ -55,6 +55,14 @@
     *   **說明**: 對接 `Indicators/ML_SuperTrend.mq5` 的 Buffer `2`、`3`、`4` 取得 Buy、Sell 與 confidence 訊號，並使用已收盤 K 棒執行反轉交易。支援固定手數、ATR stop-distance 風險手數與 confidence 比例手數，搭配 ATR 初始 SL/TP 及 SuperTrend line trailing stop。
     *   **使用限制**: Confidence 是指標的 adaptive score，不是經校準的真實勝率；使用前必須確認 `iCustom` 路徑、參數順序、指標已編譯，並在 Strategy Tester 納入 spread、commission、slippage 與不同市場狀態。
 
+*   **`Strategy_SR_Channel_Breakout.mq5`**
+    *   **功能**: 支撐/壓力通道突破 EA。
+    *   **訊號來源**: 透過 `iCustom` 對接 `Indicators/Support_Resistance_Channels.mq5`，讀取已收盤 K 棒 (`shift = 1`) 的 Buffer `2` (Resistance Broken) 與 Buffer `3` (Support Broken)；`iCustom` 參數順序為 `PivotPeriod, Source, ChannelWidthPct, MinStrength, MaxNumSR, Loopback`，使用前必須確認指標已編譯且路徑 (`InpIndicatorName`) 正確。
+    *   **進場與過濾**: 壓力向上突破 → 做多、支撐向下跌破 → 做空；僅在新 K 棒評估，並以最大點差過濾。可選同方向僅持一張 (`InpOnePosition`) 或限制同方向最大持倉數 (`InpMaxPositions`)；反向訊號先平倉，且**確認反向倉全部關閉後才允許新進場** (避免平倉失敗造成多空對鎖/淨倉錯誤)。下單前檢查 terminal/account/symbol 是否允許交易與可用保證金。
+    *   **倉位與止損**: 止損採 ATR × 倍數，下限納入 StopsLevel + spread；止盈以 RR 比例設定並套用 StopsLevel 下限；SL/TP 價格對齊 `SYMBOL_TRADE_TICK_SIZE` 避免 Invalid price/stops。手數可固定或依淨值風險% 與「量化後真實 SL 距離」計算；**當最小手數的實際風險超過設定上限、或 `InpRiskPercent<=0` 時，會略過進場而非放大手數** (風險上限優先)。
+    *   **掛載行為**: 預設等待下一根新 K 棒才交易，避免掛載/重編譯當下吃上一根 stale signal；可用 `InpTradeOnFirstBar=true` 改為立即依上一根訊號交易。讀取訊號前以 `BarsCalculated` 確認指標已算完。啟動時記錄帳戶 margin mode。
+    *   **使用限制**: 上游指標為 **repaint** 性質（通道隨新樞紐/價格更新），EA 僅信賴已收盤棒 (`shift=1`) 訊號以降低影響，但歷史回測與實盤行為仍可能因通道重算而不同。需自行於 Strategy Tester 納入 spread、commission、slippage 與多種市場狀態驗證。**反向平倉失敗的防護在回測中不易觸發 (tester 平倉幾乎必成)，務必在實盤/模擬盤再次驗證。**
+
 *   **`PrecisionSniperEA.mq5`**
     *   **功能**: PrecisionSniper 指標訊號自動交易 EA。
     *   **訊號來源**: 透過 `iCustom` 對接 `Indicators/PrecisionSniper.mq5`，讀取已收盤 K 棒 (`shift = 1`) 的 Buffer `3` Long signal 與 Buffer `4` Short signal，避免同一根 K 棒重複下單。

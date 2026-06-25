@@ -42,6 +42,27 @@
         *   Buffer `4`: Short signal price。
     *   **使用限制**: 內建績效統計使用 OHLC bar path 與 R-multiple 進行模擬，不包含 spread、commission、slippage、swap 或真實成交限制；同一根 K 棒同時觸及 SL 與 TP 時採較保守的 SL 優先假設。因此它適合訊號研究與初步比較，不應取代 MT5 Strategy Tester 或 out-of-sample robustness test。
 
+*   **`Support_Resistance_Channels.mq5`**
+    *   **功能**: 支撐/壓力「通道」指標 (SRchannel)，由 TradingView Pine Script v6 (© LonesomeTheBlue, MPL-2.0) 移植。
+    *   **核心邏輯**: 以 Pivot Period 偵測左右對稱的樞紐高/低點，將彼此距離在「最大通道寬度 %」(近 300 棒振幅 × ChannelW%) 內的樞紐分群成通道；對每個通道統計 loopback 範圍內觸及的 K 棒數作為強度，挑出最強且互不重疊的數條通道並以矩形繪製。
+    *   **顏色判定**: 通道整體在現價之上 → 壓力色；在現價之下 → 支撐色；現價落於通道內 → in-channel 色。
+    *   **參數**: `PivotPeriod` (4–30)、`Source` (High/Low 或 Close/Open)、`ChannelWidthPct` (1–8)、`MinStrength`、`MaxNumSR` (1–10，沿用原版顯示語意)、`Loopback` (100–400)、三色設定、`ShowPivot`、`ShowBroken`、`AlertsOn`，以及兩條可選 MA (SMA/EMA)。
+    *   **突破偵測**: 現價脫離所有通道且收盤由壓力下方穿越其上 → Resistance Broken；由支撐上方跌破其下 → Support Broken；可繪箭頭並觸發 `Alert`。
+    *   **EA Buffer Contract** (供 `iCustom` 讀取，建議 `shift = 1` 已收盤棒)：
+        *   Buffer `0`: MA1 (繪圖)。
+        *   Buffer `1`: MA2 (繪圖)。
+        *   Buffer `2`: Resistance Broken — 突破當根收盤價，否則 `0`。
+        *   Buffer `3`: Support Broken — 跌破當根收盤價，否則 `0`。
+        *   Buffer `4`: 最近壓力位 (現價上方最近通道下緣)，否則 `0`。
+        *   Buffer `5`: 最近支撐位 (現價下方最近通道上緣)，否則 `0`。
+        *   `iCustom` 參數順序：`PivotPeriod, Source, ChannelWidthPct, MinStrength, MaxNumSR, Loopback`（其餘顏色/Extras/MA 參數可省略用預設）。
+    *   **實作說明 / 限制**:
+        *   通道以 `OBJ_RECTANGLE` 物件繪製 (對應 Pine `box ... extend.both`)，向右延伸模擬全幅；MQL5 矩形不支援 Pine 的色彩透明度，改用可調實心色。
+        *   **因果性**: S/R 的 channel width、strength 與 pivot 偵測皆以「已收盤棒 (`shift >= 1`)」為基準計算，**不使用形成中棒 bar0**，確保 EA 以 `shift=1` 讀到的突破訊號為因果安全 (無 look-ahead)。
+        *   S/R 於**每根新收盤 K 棒重算**整個 loopback 視窗 (近似 Pine 持久陣列的最新狀態；Pine 僅在新 pivot 確認時重建，故兩者非 signal-identical)，本質為 **repaint** 指標：通道會隨新樞紐與價格變動更新，歷史外觀不保證固定，EA 對接時應只信賴已收盤狀態。
+        *   突破標記在最新收盤棒判定後以物件累積繪製，**不回填全部歷史**；最終顯示順序排序與原版的已知小差異不影響顯示出的通道集合。
+        *   尚未在 MetaEditor 編譯驗證 (開發環境無編譯器)，使用前請自行於 MetaEditor 編譯確認無 error/warning。
+
 *   **`Signal_3M.mq5`**
     *   **功能**: 3M 訊號指標。
     *   **說明**: 綜合特定條件產生交易訊號的指標，提供進出場點位的視覺化提示。
