@@ -58,10 +58,11 @@
 *   **`Strategy_SR_Channel_Breakout.mq5`**
     *   **功能**: 支撐/壓力通道突破 EA。
     *   **訊號來源**: 透過 `iCustom` 對接 `Indicators/Support_Resistance_Channels.mq5`，讀取已收盤 K 棒 (`shift = 1`) 的 Buffer `2` (Resistance Broken) 與 Buffer `3` (Support Broken)；`iCustom` 參數順序為 `PivotPeriod, Source, ChannelWidthPct, MinStrength, MaxNumSR, Loopback`，使用前必須確認指標已編譯且路徑 (`InpIndicatorName`) 正確。
-    *   **進場與過濾**: 壓力向上突破 → 做多、支撐向下跌破 → 做空；僅在新 K 棒評估，並以最大點差過濾。可選同方向僅持一張 (`InpOnePosition`) 或限制同方向最大持倉數 (`InpMaxPositions`)；反向訊號先平倉，且**確認反向倉全部關閉後才允許新進場** (避免平倉失敗造成多空對鎖/淨倉錯誤)。下單前檢查 terminal/account/symbol 是否允許交易與可用保證金。
-    *   **倉位與止損**: 止損採 ATR × 倍數，下限納入 StopsLevel + spread；止盈以 RR 比例設定並套用 StopsLevel 下限；SL/TP 價格對齊 `SYMBOL_TRADE_TICK_SIZE` 避免 Invalid price/stops。手數可固定或依淨值風險% 與「量化後真實 SL 距離」計算；**當最小手數的實際風險超過設定上限、或 `InpRiskPercent<=0` 時，會略過進場而非放大手數** (風險上限優先)。
-    *   **掛載行為**: 預設等待下一根新 K 棒才交易，避免掛載/重編譯當下吃上一根 stale signal；可用 `InpTradeOnFirstBar=true` 改為立即依上一根訊號交易。讀取訊號前以 `BarsCalculated` 確認指標已算完。啟動時記錄帳戶 margin mode。
-    *   **使用限制**: 上游指標為 **repaint** 性質（通道隨新樞紐/價格更新），EA 僅信賴已收盤棒 (`shift=1`) 訊號以降低影響，但歷史回測與實盤行為仍可能因通道重算而不同。需自行於 Strategy Tester 納入 spread、commission、slippage 與多種市場狀態驗證。**反向平倉失敗的防護在回測中不易觸發 (tester 平倉幾乎必成)，務必在實盤/模擬盤再次驗證。**
+    *   **進場與過濾**: 壓力向上突破 → 做多、支撐向下跌破 → 做空；僅在新 K 棒評估，並以最大點差過濾。可選同方向僅持一張 (`InpOnePosition`) 或限制同方向最大持倉數 (`InpMaxPositions`)；反向訊號先平倉，且**確認反向倉全部關閉後才允許新進場** (避免平倉失敗造成多空對鎖/淨倉錯誤)。下單前以方向感知方式檢查 symbol trade mode (Buy 拒 `SHORTONLY`、Sell 拒 `LONGONLY`，並拒 `DISABLED`/`CLOSEONLY`) 與 terminal/account 權限。
+    *   **帳戶 ownership (Netting vs Hedging)**: Hedging 帳戶以 symbol + MagicNumber 管理各自部位。**Netting/Exchange 帳戶下，若該 symbol 已存在「非本 EA MagicNumber」的部位 (其他策略或人工單)，EA 一律禁止新進場並記錄原因**，絕不關閉、修改或反轉非本 EA 的 exposure；無法判定 ownership 時 fail closed。
+    *   **倉位與止損**: 止損採 ATR × 倍數，下限納入 `max(StopsLevel, FreezeLevel) + spread`；止盈以 RR 比例設定並套 broker 最低距離。**SL/TP 依方向量化** (Buy SL 向下、Buy TP 向上、Sell SL 向上、Sell TP 向下對齊 `SYMBOL_TRADE_TICK_SIZE`)，量化後重新驗證真實距離，不符即不下單。手數依淨值風險% 與「量化後真實 SL 距離」計算；**risk 模式下任一必要資料 (tick value/size、equity、SL 距離) 無效一律 fail closed (不回退固定手數)；最小手數實際風險超過上限、或 `InpRiskPercent<=0` 時略過進場而非放大手數**。`OnInit` 對無效 inputs (風險/固定手數<=0、ATRPeriod<1、SLMultiple<=0、TPRatio<0、MaxPositions<1) 回傳 `INIT_PARAMETERS_INCORRECT`。
+    *   **掛載與同步**: 預設等待下一根新 K 棒才交易，避免掛載/重編譯當下吃上一根 stale signal (`InpTradeOnFirstBar=true` 可改為立即)。新 K 棒**僅在指標/ATR buffer (`BarsCalculated` + `CopyBuffer`) 成功讀取後才標記為已處理**；暫時讀取失敗會留待同根後續 tick 重試，避免永久漏訊號，同時保證同一根 K 棒不重複下單。保證金以 `OrderCalcMargin` 預檢，無法計算時 fail closed；下單後記錄 retcode/deal/order 並區分 deal completed / accepted / 失敗。
+    *   **使用限制**: 上游指標為 **repaint** 且**與 TradingView 非 signal-identical** (通道每根重算、已收盤棒判定)，EA 僅信賴已收盤棒 (`shift=1`) 訊號，但回測與實盤行為仍可能因通道重算而不同。**未實作自訂交易時段 (session) 排程**：收盤/非交易時段的下單由 broker 端拒絕並記錄 (跨午夜/多段 session 的精確排程未納入)。需自行於 Strategy Tester 納入 spread、commission、slippage 與多種市場狀態驗證。**反向平倉失敗防護與 Netting ownership 防護在回測中不易觸發 (tester 平倉幾乎必成、單帳戶單策略)，務必在實盤/模擬盤再次驗證。本輪 review 修正後需重新以 MetaEditor 編譯確認。**
 
 *   **`PrecisionSniperEA.mq5`**
     *   **功能**: PrecisionSniper 指標訊號自動交易 EA。

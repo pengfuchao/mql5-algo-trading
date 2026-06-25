@@ -242,7 +242,9 @@ void ComputeSR(const datetime &time[],
    int lb = MathMin(g_loopback, rates_total - 1);
 
 //--- 樞紐點來源序列 (依 Source 設定)
-   int need = MathMin(rates_total, g_loopback + g_prd + 2);
+//    need 需容納至 shift = loopback + prd 的 pivot 中心，其右側鄰居延伸至 loopback + 2*prd，
+//    故長度取 loopback + 2*prd + 2，避免漏掉最舊約 (prd-1) 根仍在 Loopback 內的有效 pivot。
+   int need = MathMin(rates_total, g_loopback + 2 * g_prd + 2);
    double srcH[], srcL[];
    ArrayResize(srcH, need);
    ArrayResize(srcL, need);
@@ -477,7 +479,7 @@ void RedrawPivots(const datetime &time[], const int rates_total)
 
 //--- 重新偵測一次樞紐 (與 ComputeSR 相同條件)，僅供標示
    int lb   = MathMin(g_loopback, rates_total - 1);
-   int need = MathMin(rates_total, g_loopback + g_prd + 2);
+   int need = MathMin(rates_total, g_loopback + 2 * g_prd + 2);
    int hiBound = MathMin(lb + g_prd, need - 1 - g_prd);
 
    for(int i = g_prd + 1; i <= hiBound; i++)   // 與 ComputeSR 一致：自 shift 1 起

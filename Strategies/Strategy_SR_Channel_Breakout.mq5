@@ -56,28 +56,44 @@ ENUM_ACCOUNT_MARGIN_MODE marginMode = ACCOUNT_MARGIN_MODE_RETAIL_HEDGING;
 //+------------------------------------------------------------------+
 //| 手數正規化                                                       |
 //+------------------------------------------------------------------+
+//   回傳 <= 0 表示成交量限制無效 (fail closed，呼叫端不得交易)
 double NormalizeLots(double lots)
   {
    double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
    double step   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-   if(step <= 0) step = (minLot > 0 ? minLot : 0.01);
+   if(minLot <= 0.0 || maxLot <= 0.0 || step <= 0.0)
+     {
+      PrintFormat("成交量限制無效 min=%.4f max=%.4f step=%.4f，fail closed", minLot, maxLot, step);
+      return 0.0;
+     }
 
-   lots = MathFloor(lots / step) * step;
+   // 向下對齊 step (加微小容差避免浮點誤差誤砍一個 step)
+   lots = MathFloor(lots / step + 1e-7) * step;
    if(lots < minLot) lots = minLot;
    if(lots > maxLot) lots = maxLot;
-   return lots;
+
+   // 高精度正規化僅去除浮點殘差，保留合法 step 倍數 (含 0.25/0.5 等非十進位 step)
+   return NormalizeDouble(lots, 8);
   }
 
 //+------------------------------------------------------------------+
-//| 價格對齊 broker tick size (避免 Invalid price)                    |
+//| 價格對齊 broker tick size — 方向感知 (避免量化使距離縮短)         |
+//|   AlignDown：向下對齊；AlignUp：向上對齊                          |
 //+------------------------------------------------------------------+
-double NormalizePrice(double price)
+double AlignDown(double price)
   {
-   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   if(tickSize <= 0)
-      return NormalizeDouble(price, _Digits);
-   return NormalizeDouble(MathRound(price / tickSize) * tickSize, _Digits);
+   double ts = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   if(ts <= 0) ts = _Point;
+   if(ts <= 0) return NormalizeDouble(price, _Digits);
+   return NormalizeDouble(MathFloor(price / ts + 1e-7) * ts, _Digits);
+  }
+double AlignUp(double price)
+  {
+   double ts = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   if(ts <= 0) ts = _Point;
+   if(ts <= 0) return NormalizeDouble(price, _Digits);
+   return NormalizeDouble(MathCeil(price / ts - 1e-7) * ts, _Digits);
   }
 
 //+------------------------------------------------------------------+
@@ -87,7 +103,10 @@ double NormalizePrice(double price)
 double LotsByRisk(double slDistance)
   {
    if(!InpUseRiskSizing)
+     {
+      if(InpFixedLots <= 0.0) { Print("InpFixedLots<=0，跳過進場"); return 0.0; }
       return NormalizeLots(InpFixedLots);
+     }
 
    if(InpRiskPercent <= 0.0)
      {
@@ -95,23 +114,29 @@ double LotsByRisk(double slDistance)
       return 0.0;
      }
 
+   // Risk 模式：任一必要資料無效一律 fail closed (不回退固定手數，避免靜默放大風險)
    double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   if(slDistance <= 0 || tickValue <= 0 || tickSize <= 0)
+   double equity    = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(slDistance <= 0 || tickValue <= 0 || tickSize <= 0 || equity <= 0)
      {
-      Print("tick value/size 或 SL 距離無效，回退固定手數");
-      return NormalizeLots(InpFixedLots);
+      PrintFormat("風險計算資料無效 slDist=%.5f tickVal=%.5f tickSize=%.5f equity=%.2f，略過進場",
+                  slDistance, tickValue, tickSize, equity);
+      return 0.0;
      }
 
    double valuePerPricePerLot = tickValue / tickSize;       // 每 1.0 價格波動每手金額
    double riskPerLot = slDistance * valuePerPricePerLot;    // 每手在 SL 距離下的金額風險
    if(riskPerLot <= 0)
-      return NormalizeLots(InpFixedLots);
+     {
+      Print("riskPerLot<=0，略過進場");
+      return 0.0;
+     }
 
-   double equity     = AccountInfoDouble(ACCOUNT_EQUITY);
    double riskAmount = (InpRiskPercent / 100.0) * equity;
 
    double lots       = NormalizeLots(riskAmount / riskPerLot);
+   if(lots <= 0.0) return 0.0;                               // 成交量限制無效 → fail closed
    double actualRisk = lots * riskPerLot;
    // 最小手數/步進向上夾擠導致實際風險超過設定上限時，停止交易而非放大風險
    if(actualRisk > riskAmount * 1.0001)
@@ -168,7 +193,8 @@ bool CloseByType(const ENUM_POSITION_TYPE wantType)
 //+------------------------------------------------------------------+
 //| 交易環境檢查 (terminal/account/symbol 是否允許交易、是否開盤)     |
 //+------------------------------------------------------------------+
-bool CanTrade()
+//   方向感知：Buy 拒 SHORTONLY、Sell 拒 LONGONLY，並拒 DISABLED/CLOSEONLY
+bool CanTrade(const bool isBuy)
   {
    if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED))         return false;
    if(!MQLInfoInteger(MQL_TRADE_ALLOWED))                   return false;
@@ -176,47 +202,68 @@ bool CanTrade()
    long mode = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_MODE);
    if(mode == SYMBOL_TRADE_MODE_DISABLED || mode == SYMBOL_TRADE_MODE_CLOSEONLY)
       return false;
+   if(isBuy  && mode == SYMBOL_TRADE_MODE_SHORTONLY) return false;
+   if(!isBuy && mode == SYMBOL_TRADE_MODE_LONGONLY)  return false;
    return true;
   }
 
 //+------------------------------------------------------------------+
-//| 開倉前保證金檢查                                                  |
+//| 開倉前保證金檢查 (H：無法可靠計算時 fail closed)                  |
 //+------------------------------------------------------------------+
 bool HasEnoughMargin(const ENUM_ORDER_TYPE type, const double lots, const double price)
   {
    double margin = 0.0;
    if(!OrderCalcMargin(type, _Symbol, lots, price, margin))
-      return true; // 無法計算時不阻擋 (交由 broker 端判斷)
+     {
+      PrintFormat("OrderCalcMargin 失敗 (err=%d)，fail closed", GetLastError());
+      return false;
+     }
    return (AccountInfoDouble(ACCOUNT_MARGIN_FREE) >= margin);
   }
 
 //+------------------------------------------------------------------+
-//| 下單結果記錄 (L1：驗證 retcode/deal/order)                        |
+//| 下單結果記錄 (H：區分 deal completed / accepted / 待確認)         |
 //+------------------------------------------------------------------+
-void LogTradeResult(const string ctx)
+void LogTradeResult(const string ctx, const bool sent)
   {
    uint rc = trade.ResultRetcode();
-   if(rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_DONE_PARTIAL || rc == TRADE_RETCODE_PLACED)
-      PrintFormat("%s 成功: deal=%I64u order=%I64u vol=%.2f price=%.5f",
+   if(rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_DONE_PARTIAL)
+      PrintFormat("%s 成交: deal=%I64u order=%I64u vol=%.2f price=%.5f",
                   ctx, trade.ResultDeal(), trade.ResultOrder(), trade.ResultVolume(), trade.ResultPrice());
+   else if(rc == TRADE_RETCODE_PLACED)
+      PrintFormat("%s 已受理(掛單/待確認): order=%I64u retcode=%u", ctx, trade.ResultOrder(), rc);
    else
-      PrintFormat("%s 未完成: retcode=%u %s", ctx, rc, trade.ResultRetcodeDescription());
+      PrintFormat("%s 失敗: sent=%s retcode=%u %s err=%d",
+                  ctx, (sent ? "true" : "false"), rc, trade.ResultRetcodeDescription(), GetLastError());
   }
 
 //+------------------------------------------------------------------+
-//| 新 K 線判斷                                                      |
+//| 偵測候選新 K 棒 (僅偵測，不在此標記為已處理)                      |
 //+------------------------------------------------------------------+
 bool IsNewBar()
   {
    datetime t[1];
    if(CopyTime(_Symbol, PERIOD_CURRENT, 0, 1, t) < 1) return false;
-   if(t[0] != lastBar) { lastBar = t[0]; return true; }
-   return false;
+   return (t[0] != lastBar);
   }
 
 //+------------------------------------------------------------------+
 int OnInit()
   {
+   // 輸入驗證 → 無效設定直接拒絕載入 (fail fast)
+   if(InpUseRiskSizing && InpRiskPercent <= 0.0)
+     { Print("InpRiskPercent 必須 > 0 (risk sizing 模式)");  return(INIT_PARAMETERS_INCORRECT); }
+   if(!InpUseRiskSizing && InpFixedLots <= 0.0)
+     { Print("InpFixedLots 必須 > 0 (固定手數模式)");        return(INIT_PARAMETERS_INCORRECT); }
+   if(InpATRPeriod < 1)
+     { Print("InpATRPeriod 必須 >= 1");                      return(INIT_PARAMETERS_INCORRECT); }
+   if(InpSLMultiple <= 0.0)
+     { Print("InpSLMultiple 必須 > 0");                      return(INIT_PARAMETERS_INCORRECT); }
+   if(InpTPRatio < 0.0)
+     { Print("InpTPRatio 不可為負");                         return(INIT_PARAMETERS_INCORRECT); }
+   if(InpMaxPositions < 1)
+     { Print("InpMaxPositions 必須 >= 1");                   return(INIT_PARAMETERS_INCORRECT); }
+
    trade.SetExpertMagicNumber(InpMagic);
    trade.SetDeviationInPoints(InpDeviation);
    trade.SetTypeFillingBySymbol(_Symbol);
@@ -263,27 +310,42 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   // 僅在新 K 棒評估 (使用已收盤棒訊號，避免盤中 repaint)
+   // G：偵測候選新 K 棒；資料就緒前不更新 lastBar，暫時失敗時留待同根後續 tick 重試
    if(!IsNewBar()) return;
+   datetime curBar[1];
+   if(CopyTime(_Symbol, _Period, 0, 1, curBar) < 1) return;
 
-   // M5：指標尚未計算完成前不讀取，避免讀到未填值
+   // 指標/ATR 計算就緒檢查 (暫時失敗 → 不標記已處理)
    if(BarsCalculated(srHandle) < 2 || BarsCalculated(atrHandle) < 2) return;
 
-   // 讀取指標訊號 (shift=1 已收盤棒)：Buffer 2=ResBroken, Buffer 3=SupBroken
-   double resArr[1], supArr[1];
-   if(CopyBuffer(srHandle, 2, 1, 1, resArr) < 1) return;
+   double resArr[1], supArr[1], atrArr[1];
+   if(CopyBuffer(srHandle, 2, 1, 1, resArr) < 1) return;   // shift=1 已收盤棒
    if(CopyBuffer(srHandle, 3, 1, 1, supArr) < 1) return;
+   if(CopyBuffer(atrHandle, 0, 1, 1, atrArr) < 1) return;
+
+   // 資料齊全 → 本根 K 棒標記為已處理 (即使無訊號或最終不下單，亦不於同根重評估)
+   lastBar = curBar[0];
+
    bool buySig  = (resArr[0] > 0.0);   // 壓力向上突破 → 做多
    bool sellSig = (supArr[0] > 0.0);   // 支撐向下跌破 → 做空
    if(!buySig && !sellSig) return;
    if(buySig && sellSig)   return;     // 同棒同時觸發 (罕見)，視為不明確不交易
+   bool isBuy = buySig;
 
-   // L6：交易環境檢查
-   if(!CanTrade()) { Print("目前不允許交易 (terminal/account/symbol/session)，略過"); return; }
+   // F/L6：方向感知交易環境檢查
+   if(!CanTrade(isBuy)) { Print("目前不允許該方向交易 (mode/permission)，略過"); return; }
 
-   // ATR (採用已收盤棒)
-   double atrArr[1];
-   if(CopyBuffer(atrHandle, 0, 1, 1, atrArr) < 1) return;
+   // A：Netting/Exchange 帳戶下，若該 symbol 已存在「非本 EA」部位，禁止進場 (不干擾他人 exposure)
+   if(marginMode != ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)
+     {
+      if(PositionSelect(_Symbol) && PositionGetInteger(POSITION_MAGIC) != (long)InpMagic)
+        {
+         PrintFormat("Netting：%s 已存在非本 EA (magic=%I64d) 的部位，禁止進場以免干擾其 exposure",
+                     _Symbol, PositionGetInteger(POSITION_MAGIC));
+         return;
+        }
+     }
+
    double atr = atrArr[0];
    if(atr <= 0) return;
 
@@ -303,10 +365,11 @@ void OnTick()
         }
      }
 
-   // M2：SL 距離須讓 SL 與「對應側價格」距離 >= stopsLevel，故下限納入 spread
-   double stopsLevel = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
-   double minStop = stopsLevel + spread;
-   double slDist  = MathMax(atr * InpSLMultiple, minStop);
+   // E/M2：broker 最低距離 = max(StopsLevel, FreezeLevel)，SL 距離下限再加 spread (對應側價格)
+   double stopsLevel  = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL)  * _Point;
+   double freezeLevel = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL) * _Point;
+   double brokerMin   = MathMax(stopsLevel, freezeLevel);
+   double slDist      = MathMax(atr * InpSLMultiple, brokerMin + spread);
    if(slDist <= 0) return;
 
    int buyCount, sellCount;
@@ -314,7 +377,7 @@ void OnTick()
    int maxSameDir = InpOnePosition ? 1 : MathMax(1, InpMaxPositions); // L5：同方向上限
 
    //=== 做多 ===
-   if(buySig)
+   if(isBuy)
      {
       // H1：反向倉須確認全部關閉才進場
       if(InpCloseOnReverse && sellCount > 0)
@@ -325,19 +388,24 @@ void OnTick()
         }
       if(buyCount >= maxSameDir) return;
 
-      double sl = NormalizePrice(ask - slDist);
-      double realDist = ask - sl;                                   // 量化後真實 SL 距離 → 用於 sizing
-      double tpDist = (InpTPRatio > 0) ? MathMax(slDist * InpTPRatio, stopsLevel) : 0.0;
-      double tp = (tpDist > 0) ? NormalizePrice(ask + tpDist) : 0.0;
-      double lots = LotsByRisk(realDist);
-      if(lots <= 0) return;                                         // H2：風險超限/設定為 0 → 不交易
-      if(!HasEnoughMargin(ORDER_TYPE_BUY, lots, ask)) { Print("可用保證金不足，略過做多"); return; }
+      // E：Buy SL 向下對齊、TP 向上對齊 → 量化不會縮短距離
+      double sl = AlignDown(ask - slDist);
+      double tpDist = (InpTPRatio > 0) ? MathMax(slDist * InpTPRatio, brokerMin) : 0.0;
+      double tp = (tpDist > 0) ? AlignUp(ask + tpDist) : 0.0;
 
-      trade.Buy(lots, _Symbol, 0.0, sl, tp, "SRchan breakout buy");
-      LogTradeResult("Buy");
+      // 量化後重新驗證真實距離 (對應側價格)；不符 broker 最低要求則不下單
+      if((bid - sl) < brokerMin) { PrintFormat("Buy SL 距離不足 (%.5f<%.5f)，略過", bid - sl, brokerMin); return; }
+      if(tp > 0 && (tp - bid) < brokerMin) { Print("Buy TP 距離不足，略過"); return; }
+
+      double lots = LotsByRisk(ask - sl);                           // 用量化後真實 SL 距離 sizing
+      if(lots <= 0) return;                                         // H2/B：風險超限或資料無效 → 不交易
+      if(!HasEnoughMargin(ORDER_TYPE_BUY, lots, ask)) { Print("可用保證金不足/無法計算，略過做多"); return; }
+
+      bool sent = trade.Buy(lots, _Symbol, 0.0, sl, tp, "SRchan breakout buy");
+      LogTradeResult("Buy", sent);
      }
    //=== 做空 ===
-   else if(sellSig)
+   else
      {
       if(InpCloseOnReverse && buyCount > 0)
         {
@@ -347,16 +415,20 @@ void OnTick()
         }
       if(sellCount >= maxSameDir) return;
 
-      double sl = NormalizePrice(bid + slDist);
-      double realDist = sl - bid;
-      double tpDist = (InpTPRatio > 0) ? MathMax(slDist * InpTPRatio, stopsLevel) : 0.0;
-      double tp = (tpDist > 0) ? NormalizePrice(bid - tpDist) : 0.0;
-      double lots = LotsByRisk(realDist);
-      if(lots <= 0) return;
-      if(!HasEnoughMargin(ORDER_TYPE_SELL, lots, bid)) { Print("可用保證金不足，略過做空"); return; }
+      // E：Sell SL 向上對齊、TP 向下對齊
+      double sl = AlignUp(bid + slDist);
+      double tpDist = (InpTPRatio > 0) ? MathMax(slDist * InpTPRatio, brokerMin) : 0.0;
+      double tp = (tpDist > 0) ? AlignDown(bid - tpDist) : 0.0;
 
-      trade.Sell(lots, _Symbol, 0.0, sl, tp, "SRchan breakout sell");
-      LogTradeResult("Sell");
+      if((sl - ask) < brokerMin) { PrintFormat("Sell SL 距離不足 (%.5f<%.5f)，略過", sl - ask, brokerMin); return; }
+      if(tp > 0 && (ask - tp) < brokerMin) { Print("Sell TP 距離不足，略過"); return; }
+
+      double lots = LotsByRisk(sl - bid);
+      if(lots <= 0) return;
+      if(!HasEnoughMargin(ORDER_TYPE_SELL, lots, bid)) { Print("可用保證金不足/無法計算，略過做空"); return; }
+
+      bool sent = trade.Sell(lots, _Symbol, 0.0, sl, tp, "SRchan breakout sell");
+      LogTradeResult("Sell", sent);
      }
   }
 

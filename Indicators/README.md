@@ -59,9 +59,11 @@
     *   **實作說明 / 限制**:
         *   通道以 `OBJ_RECTANGLE` 物件繪製 (對應 Pine `box ... extend.both`)，向右延伸模擬全幅；MQL5 矩形不支援 Pine 的色彩透明度，改用可調實心色。
         *   **因果性**: S/R 的 channel width、strength 與 pivot 偵測皆以「已收盤棒 (`shift >= 1`)」為基準計算，**不使用形成中棒 bar0**，確保 EA 以 `shift=1` 讀到的突破訊號為因果安全 (無 look-ahead)。
-        *   S/R 於**每根新收盤 K 棒重算**整個 loopback 視窗 (近似 Pine 持久陣列的最新狀態；Pine 僅在新 pivot 確認時重建，故兩者非 signal-identical)，本質為 **repaint** 指標：通道會隨新樞紐與價格變動更新，歷史外觀不保證固定，EA 對接時應只信賴已收盤狀態。
-        *   突破標記在最新收盤棒判定後以物件累積繪製，**不回填全部歷史**；最終顯示順序排序與原版的已知小差異不影響顯示出的通道集合。
-        *   尚未在 MetaEditor 編譯驗證 (開發環境無編譯器)，使用前請自行於 MetaEditor 編譯確認無 error/warning。
+        *   **與 Pine 非 signal-identical (有意設計差異，非等價移植)**：Pine 使用 `var` 持久化 pivot 陣列，且**只在新 pivot 被確認時**才重建 `suportresistance` 通道與重算 strength，並在**即時棒 (live bar)** 判定突破；本 MQL5 版改為**每根新收盤 K 棒從 loopback 視窗重建**通道，並在**已收盤棒 (`shift=1`)** 判定突破。因此即使沒有新 pivot，rolling 的 channel width / strength / selection 仍可能逐棒變動，導致 **TradingView 與 MT5 的 breakout 訊號不會完全一致**。此設計是為了 (a) 給 EA 因果安全的已收盤訊號、(b) 避免 live-bar repaint 進入 EA，刻意取捨；若需與 TV 完全相同需改回 live-bar/stateful 實作 (會引入 repaint，不建議用於 EA)。
+        *   本質仍為 **repaint** 指標：通道會隨新樞紐與價格變動更新，歷史外觀不保證固定，EA 對接時只應信賴已收盤狀態。
+        *   Pivot 蒐集視窗對齊 Pine 的 `bar_index - pivot_location > Loopback` 淘汰規則：有效 pivot 中心 shift 介於 `prd+1`（已收盤可確認）至 `loopback+prd`（淘汰邊界）；source 陣列長度取 `loopback+2*prd+2` 以免漏掉最舊約 `prd-1` 根仍有效的 pivot。
+        *   突破標記在最新收盤棒判定後以物件累積繪製，**不回填全部歷史**。Pine 排序段因 selection 已為降冪實際為 no-op，本版採乾淨交換取代原版 partial-swap quirk，顯示的通道集合不受影響。
+        *   先前版本經 MetaEditor 編譯為 0 error / 0 warning；**本輪 review 修正 (因果視窗長度) 後需重新編譯確認**。
 
 *   **`Signal_3M.mq5`**
     *   **功能**: 3M 訊號指標。
