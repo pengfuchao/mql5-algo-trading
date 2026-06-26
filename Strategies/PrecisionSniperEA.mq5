@@ -1009,6 +1009,7 @@ double OnTester()
 
    double dd = TesterStatistics(STAT_EQUITY_DDREL_PERCENT); // 相對淨值回撤 %
    double pf = TesterStatistics(STAT_PROFIT_FACTOR);
+   if(pf <= 0.0) pf = 5.0;  // 無虧損交易時 MT5 回傳 PF=0，視為最佳穩定度避免誤淘汰
 
    double fitness = (dd > 0) ? (profit / dd) : profit;      // 回報 / 回撤
    fitness *= MathMin(pf, 5.0);                             // 兼顧穩定度，封頂避免極端值主導
