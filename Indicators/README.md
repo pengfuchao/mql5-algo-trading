@@ -40,7 +40,8 @@
         *   Buffer `2`: Trend EMA。
         *   Buffer `3`: Long signal price。
         *   Buffer `4`: Short signal price。
-    *   **使用限制**: 內建績效統計使用 OHLC bar path 與 R-multiple 進行模擬，不包含 spread、commission、slippage、swap 或真實成交限制；同一根 K 棒同時觸及 SL 與 TP 時採較保守的 SL 優先假設。因此它適合訊號研究與初步比較，不應取代 MT5 Strategy Tester 或 out-of-sample robustness test。
+    *   **EA 對接設計**: Buffer `0–4` 會持續填入資料，`ShowEMA` / `ShowSignals` 只控制圖表繪製，不再關閉 EA 可讀取的 buffer。HTF 趨勢過濾在訊號掃描時使用「當下已收盤」的 HTF K 棒，避免低週期歷史訊號讀到尚未完成的大週期 EMA。
+    *   **使用限制**: 內建績效統計使用 OHLC bar path 與 R-multiple 進行模擬，不包含 spread、commission、slippage、swap 或真實成交限制；同一根 K 棒同時觸及 SL 與 TP 時採較保守的 SL 優先假設。Dashboard 只統計已結束的模擬交易，最後仍在進行中的交易顯示為 Active，不強制算入 closed-trade stats。因此它適合訊號研究與初步比較，不應取代 MT5 Strategy Tester 或 out-of-sample robustness test。
 
 *   **`Support_Resistance_Channels.mq5`**
     *   **功能**: 支撐/壓力「通道」指標 (SRchannel)，由 TradingView Pine Script v6 (© LonesomeTheBlue, MPL-2.0) 移植。

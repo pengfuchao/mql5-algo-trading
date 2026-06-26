@@ -1,11 +1,11 @@
 //+------------------------------------------------------------------+
 //|                                           PrecisionSniperEA.mq5 |
 //|                           Developer: Hammad Dilber & Antigravity |
-//|                           Version  : 1.00                        |
+//|                           Version  : 1.20                        |
 //|                           Description: PrecisionSniper EA        |
 //+------------------------------------------------------------------+
 #property copyright "Hammad Dilber & Antigravity"
-#property version   "1.00"
+#property version   "1.20"
 #property description "PrecisionSniper 實盤自動跟單 Expert Advisor"
 
 // 引入 MT5 標準交易庫
@@ -51,6 +51,7 @@ input int             InpMagicNumber = 909090;        // EA 專屬特徵碼 (Mag
 input string          InpComment     = "PrecSniperEA"; // 訂單注釋
 input int             InpMaxSpread   = 30;            // 最大容許價差 (Points)
 input bool            InpPartialExit = true;          // 啟用分批止盈出場 (1/3 模式)
+input bool            InpTradeOnFirstBar = false;     // 掛載後第一根新K是否允許交易
 
 input string          __IND_SET__    = "====== [ PrecisionSniper 核心參數 ] ======";
 input string          InpIndName     = "PrecisionSniper"; // 指標名稱 (對應的 EX5 檔名)
@@ -96,6 +97,128 @@ double   g_tp2Price     = 0;
 double   g_tp3Price     = 0;
 double   g_riskVal      = 0;
 int      g_positionDir  = 0; // 0=None, 1=Long, -1=Short
+bool     g_tp1Hit       = false; // 已觸及 TP1 (分批階段旗標，與 SL/UseTrail 解耦)
+bool     g_tp2Hit       = false; // 已觸及 TP2
+bool     g_showVisual   = true;  // 是否繪製視覺物件 (優化模式自動關閉以加速)
+
+//====================================================================
+// 輔助函數宣告
+//====================================================================
+ENUM_PRESET EffectivePreset()
+{
+   ENUM_PRESET p = Preset;
+   if(p == PRESET_AUTO)
+   {
+      long sec = PeriodSeconds(PERIOD_CURRENT);
+      if(sec <= 300)        p = PRESET_SCALPING;
+      else if(sec <= 3600)  p = PRESET_DEFAULT;
+      else if(sec <= 14400) p = PRESET_AGGRESSIVE;
+      else                  p = PRESET_SWING;
+   }
+   return p;
+}
+
+int EffectiveATRPeriod()
+{
+   ENUM_PRESET p = EffectivePreset();
+   if     (p == PRESET_SCALPING)     return 10;
+   else if(p == PRESET_AGGRESSIVE)   return 12;
+   else if(p == PRESET_DEFAULT)      return 14;
+   else if(p == PRESET_CONSERVATIVE) return 14;
+   else if(p == PRESET_SWING)        return 20;
+   else if(p == PRESET_CRYPTO)       return 20;
+   else if(p == PRESET_GOLD)         return 20;
+   return C_ATR;
+}
+
+int VolumeDigitsFromStep(double step)
+{
+   int digits = 0;
+   while(step > 0.0 && step < 1.0 && digits < 8)
+   {
+      step *= 10.0;
+      digits++;
+   }
+   return digits;
+}
+
+double NormalizeVolumeDown(double volume)
+{
+   double step = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
+   if(step <= 0.0) return 0.0;
+   double normalized = MathFloor(volume / step) * step;
+   return NormalizeDouble(normalized, VolumeDigitsFromStep(step));
+}
+
+bool TradeRetcodeOK(string action)
+{
+   uint rc = trade.ResultRetcode();
+   if(rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_DONE_PARTIAL || rc == TRADE_RETCODE_PLACED)
+      return true;
+
+   Print("PrecisionSniperEA: ", action, " 失敗。retcode=", rc, " desc=", trade.ResultRetcodeDescription());
+   return false;
+}
+
+bool ModifyPositionChecked(ulong ticket, double sl, double tp, string action)
+{
+   if(!trade.PositionModify(ticket, sl, tp))
+   {
+      Print("PrecisionSniperEA: ", action, " 呼叫失敗。desc=", trade.ResultRetcodeDescription());
+      return false;
+   }
+   return TradeRetcodeOK(action);
+}
+
+bool ClosePositionChecked(ulong ticket, string action)
+{
+   if(!trade.PositionClose(ticket))
+   {
+      Print("PrecisionSniperEA: ", action, " 呼叫失敗。desc=", trade.ResultRetcodeDescription());
+      return false;
+   }
+   return TradeRetcodeOK(action);
+}
+
+bool ClosePartialChecked(ulong ticket, double volume, string action)
+{
+   if(volume <= 0.0) return true;
+   if(!trade.PositionClosePartial(ticket, volume))
+   {
+      Print("PrecisionSniperEA: ", action, " 呼叫失敗。volume=", volume, " desc=", trade.ResultRetcodeDescription());
+      return false;
+   }
+   return TradeRetcodeOK(action);
+}
+
+bool TradingAllowedFor(ENUM_POSITION_TYPE type)
+{
+   if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) ||
+      !AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) ||
+      !AccountInfoInteger(ACCOUNT_TRADE_EXPERT))
+   {
+      Print("PrecisionSniperEA: Terminal/account 不允許 EA 交易，略過進場。");
+      return false;
+   }
+
+   ENUM_SYMBOL_TRADE_MODE mode = (ENUM_SYMBOL_TRADE_MODE)SymbolInfoInteger(Symbol(), SYMBOL_TRADE_MODE);
+   if(mode == SYMBOL_TRADE_MODE_DISABLED || mode == SYMBOL_TRADE_MODE_CLOSEONLY)
+   {
+      Print("PrecisionSniperEA: Symbol trade mode 不允許新倉，mode=", (int)mode);
+      return false;
+   }
+   if(type == POSITION_TYPE_BUY && mode == SYMBOL_TRADE_MODE_SHORTONLY)
+   {
+      Print("PrecisionSniperEA: Symbol 僅允許 short，略過 Buy。");
+      return false;
+   }
+   if(type == POSITION_TYPE_SELL && mode == SYMBOL_TRADE_MODE_LONGONLY)
+   {
+      Print("PrecisionSniperEA: Symbol 僅允許 long，略過 Sell。");
+      return false;
+   }
+   return true;
+}
 
 //====================================================================
 // EA 初始化函數 (OnInit)
@@ -104,17 +227,46 @@ int OnInit()
 {
    g_point  = SymbolInfoDouble(Symbol(), SYMBOL_POINT);
    g_digits = (int)SymbolInfoInteger(Symbol(), SYMBOL_DIGITS);
+
+   if(g_point <= 0.0)
+   {
+      Print("PrecisionSniperEA: SYMBOL_POINT 無效。");
+      return INIT_FAILED;
+   }
+   if(InpMagicNumber <= 0)
+   {
+      Print("PrecisionSniperEA: InpMagicNumber 必須大於 0，避免管理人工單。");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if((!InpUseRiskSize && InpLots <= 0.0) || (InpUseRiskSize && InpRiskPercent <= 0.0))
+   {
+      Print("PrecisionSniperEA: 固定手數或風險比例設定無效。");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(C_EmaFast < 1 || C_EmaSlow < 1 || C_EmaTrend < 1 || C_RSI < 1 || C_ATR < 1 ||
+      C_MinScore < 0 || SLMult <= 0.0 || TP1_RR <= 0.0 || TP2_RR <= 0.0 || TP3_RR <= 0.0 ||
+      TP1_RR > TP2_RR || TP2_RR > TP3_RR || CooldownBars < 0 || SwingLB < 1)
+   {
+      Print("PrecisionSniperEA: PrecisionSniper inputs 無效。");
+      return INIT_PARAMETERS_INCORRECT;
+   }
    
    // 設定交易 Magic Number
    trade.SetExpertMagicNumber(InpMagicNumber);
+   trade.SetDeviationInPoints(InpMaxSpread);
    
+   // 優化模式 (Optimization) 時關閉所有視覺物件以大幅加速。
+   // ⚠️ ShowSignals 必須恆為 true：指標僅在 ShowSignals 時填入 Buffer 3/4 箭頭，
+   //    關閉將導致 EA 永遠讀不到信號。其餘 4 個視覺旗標 (EMA/TPSL/Trail/Dash) 才可關。
+   g_showVisual = !(bool)MQLInfoInteger(MQL_OPTIMIZATION);
+
    // 初始化 Custom Indicator 句柄
    // 傳入與指標完全一致的參數列表以確保即時同步
    hIndicator = iCustom(Symbol(), PERIOD_CURRENT, InpIndName,
                         Preset, HTF, C_EmaFast, C_EmaSlow, C_EmaTrend, C_RSI, C_ATR, C_MinScore, C_SLMult,
                         TP1_RR, TP2_RR, TP3_RR, SLMult, CooldownBars, UseTrail, (SLType == SL_STRUCTURE), SwingLB,
                         GradeFilter, HideCGrade,
-                        true, true, true, true, true, // 顯示信號、均線、TPSL、移動止損線、儀表板 (視覺物件)
+                        true, g_showVisual, g_showVisual, g_showVisual, g_showVisual, // 信號(恆開)、均線、TPSL、移動止損線、儀表板
                         0, D'2025.01.01 00:00', D'2025.12.31 23:59', 500 // 預設回測參數 (無實盤影響)
                        );
    
@@ -125,13 +277,7 @@ int OnInit()
    }
    
    // 初始化 ATR 句柄 (用於 EA 自主 SL 計算)
-   int pATR = (Preset == PRESET_SCALPING) ? 10 :
-              (Preset == PRESET_AGGRESSIVE) ? 12 :
-              (Preset == PRESET_DEFAULT) ? 14 :
-              (Preset == PRESET_CONSERVATIVE) ? 14 :
-              (Preset == PRESET_SWING) ? 20 :
-              (Preset == PRESET_CRYPTO) ? 20 :
-              (Preset == PRESET_GOLD) ? 20 : C_ATR;
+   int pATR = EffectiveATRPeriod();
               
    hATR = iATR(Symbol(), PERIOD_CURRENT, pATR);
    if(hATR == INVALID_HANDLE)
@@ -140,11 +286,11 @@ int OnInit()
       return INIT_FAILED;
    }
    
-   Print("PrecisionSniperEA: 初始化成功！");
-   
-   // 繪製初始 Dashboard 背景與標題
-   CreateEAPanel();
-   
+   Print("PrecisionSniperEA: 初始化成功！", (g_showVisual ? "" : " (優化模式：視覺物件已關閉)"));
+
+   // 繪製初始 Dashboard 背景與標題 (優化模式略過)
+   if(g_showVisual) CreateEAPanel();
+
    return INIT_SUCCEEDED;
 }
 
@@ -171,15 +317,20 @@ void OnTick()
    // 1. 每一跳 (Every Tick) 優先進行：移動止損與分批止盈管理
    ManagePositionExits();
    
-   // 更新 EA Dashboard 面板數據
-   UpdateEAPanel();
+   // 更新 EA Dashboard 面板數據 (優化模式略過繪圖)
+   if(g_showVisual) UpdateEAPanel();
 
    // 2. 新 Bar 檢測：信號掃描僅在新 K 線開盤時觸發 (防止重複下單且大幅節省 CPU)
    datetime currentBarTime = (datetime)SeriesInfoInteger(Symbol(), PERIOD_CURRENT, SERIES_LASTBAR_DATE);
    if(currentBarTime == lastBarTime) return;
-   
-   // 若為新 Bar，則開始掃描
-   lastBarTime = currentBarTime;
+
+   // 預設掛載後先等待下一根新 K，避免吃到 EA 啟動前已存在的 stale signal。
+   if(lastBarTime == 0 && !InpTradeOnFirstBar)
+   {
+      lastBarTime = currentBarTime;
+      Print("PrecisionSniperEA: 初次掛載，略過第一根已完成訊號；下一根新 K 開始交易。");
+      return;
+   }
    
    // 3. spread 過濾器，防止極端點差下單
    int currentSpread = (int)SymbolInfoInteger(Symbol(), SYMBOL_SPREAD);
@@ -193,6 +344,12 @@ void OnTick()
    //    讀取 bar 1 (上根剛收盤的 K 線)，確保信號 100% 凍結、不Repaint！
    double buySig[1];
    double sellSig[1];
+
+   if(BarsCalculated(hIndicator) < 2 || BarsCalculated(hATR) < 2)
+   {
+      Print("PrecisionSniperEA: 指標/ATR 尚未完成計算，等待同一根 K 的後續 tick 重試。");
+      return;
+   }
    
    if(CopyBuffer(hIndicator, 3, 1, 1, buySig) <= 0 || CopyBuffer(hIndicator, 4, 1, 1, sellSig) <= 0)
    {
@@ -202,13 +359,20 @@ void OnTick()
    
    bool signalBuy  = (buySig[0] > 0);
    bool signalSell = (sellSig[0] > 0);
+
+   // Buffer 成功讀取後才標記此 K 已處理；spread/buffer 暫時失敗不會永久漏訊號。
+   lastBarTime = currentBarTime;
    
    // 5. 交易決策執行
    if(signalBuy)
    {
       Print("PrecisionSniperEA: 偵測到 Buy 入場信號！");
       // 信號反向平倉：先平掉所有賣單
-      ClosePositions(POSITION_TYPE_SELL);
+      if(!ClosePositions(POSITION_TYPE_SELL))
+      {
+         Print("PrecisionSniperEA: 反向 Sell 平倉未完全成功，取消本根 Buy 進場。");
+         return;
+      }
       // 執行買入開倉
       OpenPosition(POSITION_TYPE_BUY);
    }
@@ -216,7 +380,11 @@ void OnTick()
    {
       Print("PrecisionSniperEA: 偵測到 Sell 入場信號！");
       // 信號反向平倉：先平掉所有買單
-      ClosePositions(POSITION_TYPE_BUY);
+      if(!ClosePositions(POSITION_TYPE_BUY))
+      {
+         Print("PrecisionSniperEA: 反向 Buy 平倉未完全成功，取消本根 Sell 進場。");
+         return;
+      }
       // 執行賣出開倉
       OpenPosition(POSITION_TYPE_SELL);
    }
@@ -229,9 +397,15 @@ void OpenPosition(ENUM_POSITION_TYPE type)
 {
    // 檢查是否有同類型持倉以防重覆開倉
    if(HasPosition(type)) return;
+   if(!TradingAllowedFor(type)) return;
    
    double ask = SymbolInfoDouble(Symbol(), SYMBOL_ASK);
    double bid = SymbolInfoDouble(Symbol(), SYMBOL_BID);
+   if(ask <= 0.0 || bid <= 0.0)
+   {
+      Print("PrecisionSniperEA: Bid/Ask 無效，放棄下單。");
+      return;
+   }
    double entryPrice = (type == POSITION_TYPE_BUY) ? ask : bid;
    
    // 1. 讀取 ATR
@@ -286,46 +460,110 @@ void OpenPosition(ENUM_POSITION_TYPE type)
    }
    
    slPrice = NormalizeDouble(slPrice, g_digits);
+
+   // ── Broker 最小停損距離 (STOPS_LEVEL) 強制驗證 ──
+   // SL 距離不足會被伺服器拒單；不足時將 SL 外推至最小合法距離並記錄。
+   long   stopsLevelPts = SymbolInfoInteger(Symbol(), SYMBOL_TRADE_STOPS_LEVEL);
+   long   freezeLevelPts = SymbolInfoInteger(Symbol(), SYMBOL_TRADE_FREEZE_LEVEL);
+   long   spreadPts = SymbolInfoInteger(Symbol(), SYMBOL_SPREAD);
+   long   minStopPts = ((stopsLevelPts > freezeLevelPts) ? stopsLevelPts : freezeLevelPts) + spreadPts;
+   double minStopDist = (double)minStopPts * g_point;
+   if(minStopDist > 0)
+   {
+      if(type == POSITION_TYPE_BUY && (entryPrice - slPrice) < minStopDist)
+      {
+         slPrice = NormalizeDouble(entryPrice - minStopDist, g_digits);
+         Print("PrecisionSniperEA: SL 距離小於 StopsLevel，已外推至 ", slPrice);
+      }
+      else if(type == POSITION_TYPE_SELL && (slPrice - entryPrice) < minStopDist)
+      {
+         slPrice = NormalizeDouble(entryPrice + minStopDist, g_digits);
+         Print("PrecisionSniperEA: SL 距離小於 StopsLevel，已外推至 ", slPrice);
+      }
+   }
+
    double riskVal = MathAbs(entryPrice - slPrice);
+   if(riskVal <= 0)
+   {
+      Print("PrecisionSniperEA: 風險距離為零，放棄下單以策安全。");
+      return;
+   }
    
    // 3. 計算開倉手數 (Lots)
    double lots = InpLots;
+   double riskUSD = 0.0;
+   double lossPerLot = 0.0;
+   ENUM_ORDER_TYPE orderType = (type == POSITION_TYPE_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
    if(InpUseRiskSize)
    {
-      double balance = AccountInfoDouble(ACCOUNT_BALANCE);
-      double riskUSD = balance * InpRiskPercent / 100.0;
-      double tickSize = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_SIZE);
-      double tickValue = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
-      double volumeStep = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
-      
-      if(tickSize > 0 && tickValue > 0 && riskVal > 0)
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      riskUSD = equity * InpRiskPercent / 100.0;
+      double profitAtSL = 0.0;
+      if(equity <= 0.0 || riskUSD <= 0.0 ||
+         !OrderCalcProfit(orderType, Symbol(), 1.0, entryPrice, slPrice, profitAtSL))
       {
-         lots = riskUSD / ((riskVal / tickSize) * tickValue);
-         lots = MathFloor(lots / volumeStep) * volumeStep;
+         Print("PrecisionSniperEA: risk sizing 所需資料無效，放棄下單。");
+         return;
       }
+      lossPerLot = MathAbs(profitAtSL);
+      if(lossPerLot <= 0.0)
+      {
+         Print("PrecisionSniperEA: 1 lot 到 SL 的虧損估算無效，放棄下單。");
+         return;
+      }
+      lots = riskUSD / lossPerLot;
    }
    
    // 限制手數上下限
    double minLot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN);
    double maxLot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MAX);
-   lots = MathMax(minLot, MathMin(maxLot, lots));
-   lots = NormalizeDouble(lots, 2);
+   double stepLot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
+   if(minLot <= 0.0 || maxLot <= 0.0 || stepLot <= 0.0)
+   {
+      Print("PrecisionSniperEA: broker volume constraints 無效，放棄下單。");
+      return;
+   }
+   double normalizedLots = NormalizeVolumeDown(MathMin(maxLot, lots));
+   if(normalizedLots < minLot)
+   {
+      if(InpUseRiskSize && lossPerLot > 0.0 && (lossPerLot * minLot) > riskUSD)
+      {
+         Print("PrecisionSniperEA: 最小手數實際風險超過設定風險，放棄下單。");
+         return;
+      }
+      normalizedLots = minLot;
+   }
+   lots = normalizedLots;
    
    // 4. 計算三個止盈價格 (Take Profits)
    double tp3Price = (type == POSITION_TYPE_BUY) ? (entryPrice + riskVal * TP3_RR) : (entryPrice - riskVal * TP3_RR);
    tp3Price = NormalizeDouble(tp3Price, g_digits);
+
+   // TP3 為伺服器端止盈，同樣需滿足 StopsLevel
+   if(minStopDist > 0)
+   {
+      if(type == POSITION_TYPE_BUY && (tp3Price - entryPrice) < minStopDist)
+         tp3Price = NormalizeDouble(entryPrice + minStopDist, g_digits);
+      else if(type == POSITION_TYPE_SELL && (entryPrice - tp3Price) < minStopDist)
+         tp3Price = NormalizeDouble(entryPrice - minStopDist, g_digits);
+   }
    
-   // 記錄全域開倉數據
-   g_entryPrice  = entryPrice;
-   g_slPrice     = slPrice;
-   g_riskVal     = riskVal;
-   g_tp1Price    = (type == POSITION_TYPE_BUY) ? (entryPrice + riskVal * TP1_RR) : (entryPrice - riskVal * TP1_RR);
-   g_tp2Price    = (type == POSITION_TYPE_BUY) ? (entryPrice + riskVal * TP2_RR) : (entryPrice - riskVal * TP2_RR);
-   g_tp3Price    = tp3Price;
-   g_positionDir = (type == POSITION_TYPE_BUY) ? 1 : -1;
-   
-   g_tp1Price    = NormalizeDouble(g_tp1Price, g_digits);
-   g_tp2Price    = NormalizeDouble(g_tp2Price, g_digits);
+   double plannedTp1 = (type == POSITION_TYPE_BUY) ? (entryPrice + riskVal * TP1_RR) : (entryPrice - riskVal * TP1_RR);
+   double plannedTp2 = (type == POSITION_TYPE_BUY) ? (entryPrice + riskVal * TP2_RR) : (entryPrice - riskVal * TP2_RR);
+   plannedTp1 = NormalizeDouble(plannedTp1, g_digits);
+   plannedTp2 = NormalizeDouble(plannedTp2, g_digits);
+
+   double margin = 0.0;
+   if(!OrderCalcMargin(orderType, Symbol(), lots, entryPrice, margin))
+   {
+      Print("PrecisionSniperEA: 保證金預檢失敗，放棄下單。");
+      return;
+   }
+   if(margin > AccountInfoDouble(ACCOUNT_MARGIN_FREE))
+   {
+      Print("PrecisionSniperEA: 可用保證金不足，required=", margin, " free=", AccountInfoDouble(ACCOUNT_MARGIN_FREE));
+      return;
+   }
    
    // 5. 送出訂單 (以最終 TP3 作為伺服器 TP，TP1/2 由 EA 動態分批離場或移動止損)
    bool success = false;
@@ -338,13 +576,24 @@ void OpenPosition(ENUM_POSITION_TYPE type)
       success = trade.Sell(lots, Symbol(), bid, slPrice, tp3Price, InpComment);
    }
    
-   if(success)
+   if(success && TradeRetcodeOK("開倉"))
    {
+      // 只在 broker 接受交易後才記錄全域開倉數據，避免失敗訂單留下假狀態。
+      g_entryPrice  = entryPrice;
+      g_slPrice     = slPrice;
+      g_riskVal     = riskVal;
+      g_tp1Price    = plannedTp1;
+      g_tp2Price    = plannedTp2;
+      g_tp3Price    = tp3Price;
+      g_positionDir = (type == POSITION_TYPE_BUY) ? 1 : -1;
+      g_tp1Hit      = false;
+      g_tp2Hit      = false;
       Print("PrecisionSniperEA: 開倉成功！手數: ", lots, " 入場價: ", entryPrice, " 止損價: ", slPrice, " 最終止盈: ", tp3Price);
    }
    else
    {
       Print("PrecisionSniperEA: 開倉失敗！錯誤代碼: ", trade.ResultRetcodeDescription());
+      ResetState();
    }
 }
 
@@ -391,10 +640,32 @@ void ManagePositionExits()
             g_tp1Price    = NormalizeDouble(g_tp1Price, g_digits);
             g_tp2Price    = NormalizeDouble(g_tp2Price, g_digits);
             g_tp3Price    = NormalizeDouble(g_tp3Price, g_digits);
+
+            // 依止損已被推進的位置推斷分批階段 (僅 UseTrail 時 SL 會移動可推斷；
+            // 非 trailing 模式重啟無法由 SL 還原，保守視為尚未分批，最差只是少一次提早出場)
+            if(UseTrail)
+            {
+               if(posType == POSITION_TYPE_BUY)
+               {
+                  g_tp2Hit = (currentSL >= g_tp1Price - g_point);
+                  g_tp1Hit = g_tp2Hit || (currentSL >= openPrice - g_point);
+               }
+               else
+               {
+                  g_tp2Hit = (currentSL > 0 && currentSL <= g_tp1Price + g_point);
+                  g_tp1Hit = g_tp2Hit || (currentSL > 0 && currentSL <= openPrice + g_point);
+               }
+            }
+            else { g_tp1Hit = false; g_tp2Hit = false; }
          }
          
          double step = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
          double minLot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN);
+         if(step <= 0.0 || minLot <= 0.0)
+         {
+            Print("PrecisionSniperEA: broker volume step/min lot 無效，略過出場管理。");
+            continue;
+         }
          
          //=================================================================
          // 多單出口管理 (Buy Position Management)
@@ -402,64 +673,66 @@ void ManagePositionExits()
          if(posType == POSITION_TYPE_BUY)
          {
             // ── 第一階段：觸及 TP1 ──
-            // 判斷條件：價格大於 TP1，且止損仍處於初始低於入場價的狀態
-            if(price >= g_tp1Price && currentSL < openPrice)
+            if(price >= g_tp1Price && !g_tp1Hit)
             {
                Print("PrecisionSniperEA: 價格觸及 TP1 (", g_tp1Price, ")。");
-               
+               bool stageOK = true;
+
                // 1. 移動止損至保本價 (Breakeven)
                if(UseTrail)
                {
-                  trade.PositionModify(ticket, openPrice, currentTP);
-                  Print("PrecisionSniperEA: 止損已移動至保本位 (", openPrice, ")。");
+                  stageOK = ModifyPositionChecked(ticket, openPrice, currentTP, "TP1 移動止損至保本");
+                  if(stageOK) Print("PrecisionSniperEA: 止損已移動至保本位 (", openPrice, ")。");
                }
-               
+
                // 2. 分批離場 1/3 手數
-               if(InpPartialExit)
+               if(stageOK && InpPartialExit)
                {
                   double closeVol = MathFloor((currentVol / 3.0) / step) * step;
                   if(closeVol < minLot) closeVol = minLot;
                   if(closeVol < currentVol)
                   {
-                     trade.PositionClosePartial(ticket, closeVol);
-                     Print("PrecisionSniperEA: TP1 分批平倉 1/3 手數 (", closeVol, " Lots)。");
+                     stageOK = ClosePartialChecked(ticket, closeVol, "TP1 分批平倉");
+                     if(stageOK) Print("PrecisionSniperEA: TP1 分批平倉 1/3 手數 (", closeVol, " Lots)。");
                   }
                }
+               if(stageOK) g_tp1Hit = true;
             }
-            
+
             // ── 第二階段：觸及 TP2 ──
-            // 判斷條件：價格大於 TP2，且止損低於 TP1 的狀態
-            else if(price >= g_tp2Price && currentSL < g_tp1Price && currentSL >= openPrice)
+            else if(price >= g_tp2Price && g_tp1Hit && !g_tp2Hit)
             {
                Print("PrecisionSniperEA: 價格觸及 TP2 (", g_tp2Price, ")。");
-               
+               bool stageOK = true;
+
                // 1. 移動止損至 TP1 鎖定利潤
                if(UseTrail)
                {
-                  trade.PositionModify(ticket, g_tp1Price, currentTP);
-                  Print("PrecisionSniperEA: 止損已移至 TP1 鎖利 (", g_tp1Price, ")。");
+                  stageOK = ModifyPositionChecked(ticket, g_tp1Price, currentTP, "TP2 移動止損至 TP1");
+                  if(stageOK) Print("PrecisionSniperEA: 止損已移至 TP1 鎖利 (", g_tp1Price, ")。");
                }
-               
+
                // 2. 分批離場剩餘手數的 1/2 (即初始總手數的另 1/3)
-               if(InpPartialExit)
+               if(stageOK && InpPartialExit)
                {
                   double closeVol = MathFloor((currentVol / 2.0) / step) * step;
                   if(closeVol < minLot) closeVol = minLot;
                   if(closeVol < currentVol)
                   {
-                     trade.PositionClosePartial(ticket, closeVol);
-                     Print("PrecisionSniperEA: TP2 分批平倉剩餘的一半 (", closeVol, " Lots)。");
+                     stageOK = ClosePartialChecked(ticket, closeVol, "TP2 分批平倉");
+                     if(stageOK) Print("PrecisionSniperEA: TP2 分批平倉剩餘的一半 (", closeVol, " Lots)。");
                   }
                }
+               if(stageOK) g_tp2Hit = true;
             }
-            
+
             // ── 第三階段：觸及 TP3 ──
-            // 價格若達到 TP3，將由伺服器端挂單 TP3 自動全平。此處可選配手動強制全平防止滑點。
+            // 價格若達到 TP3，將由伺服器端挂單 TP3 自動全平。此處主動全平防止滑點。
             else if(price >= g_tp3Price)
             {
                Print("PrecisionSniperEA: 價格觸及最終目標 TP3 (", g_tp3Price, ")，全部平倉離場。");
-               trade.PositionClose(ticket);
-               ResetState();
+               if(ClosePositionChecked(ticket, "TP3 全部平倉"))
+                  ResetState();
             }
          }
          
@@ -469,57 +742,61 @@ void ManagePositionExits()
          else if(posType == POSITION_TYPE_SELL)
          {
             // ── 第一階段：觸及 TP1 ──
-            if(price <= g_tp1Price && (currentSL > openPrice || currentSL == 0))
+            if(price <= g_tp1Price && !g_tp1Hit)
             {
                Print("PrecisionSniperEA: 價格觸及 TP1 (", g_tp1Price, ")。");
-               
+               bool stageOK = true;
+
                if(UseTrail)
                {
-                  trade.PositionModify(ticket, openPrice, currentTP);
-                  Print("PrecisionSniperEA: 止損已移動至保本位 (", openPrice, ")。");
+                  stageOK = ModifyPositionChecked(ticket, openPrice, currentTP, "TP1 移動止損至保本");
+                  if(stageOK) Print("PrecisionSniperEA: 止損已移動至保本位 (", openPrice, ")。");
                }
-               
-               if(InpPartialExit)
+
+               if(stageOK && InpPartialExit)
                {
                   double closeVol = MathFloor((currentVol / 3.0) / step) * step;
                   if(closeVol < minLot) closeVol = minLot;
                   if(closeVol < currentVol)
                   {
-                     trade.PositionClosePartial(ticket, closeVol);
-                     Print("PrecisionSniperEA: TP1 分批平倉 1/3 手數 (", closeVol, " Lots)。");
+                     stageOK = ClosePartialChecked(ticket, closeVol, "TP1 分批平倉");
+                     if(stageOK) Print("PrecisionSniperEA: TP1 分批平倉 1/3 手數 (", closeVol, " Lots)。");
                   }
                }
+               if(stageOK) g_tp1Hit = true;
             }
-            
+
             // ── 第二階段：觸及 TP2 ──
-            else if(price <= g_tp2Price && (currentSL > g_tp1Price || currentSL == 0) && currentSL <= openPrice)
+            else if(price <= g_tp2Price && g_tp1Hit && !g_tp2Hit)
             {
                Print("PrecisionSniperEA: 價格觸及 TP2 (", g_tp2Price, ")。");
-               
+               bool stageOK = true;
+
                if(UseTrail)
                {
-                  trade.PositionModify(ticket, g_tp1Price, currentTP);
-                  Print("PrecisionSniperEA: 止損已移至 TP1 鎖利 (", g_tp1Price, ")。");
+                  stageOK = ModifyPositionChecked(ticket, g_tp1Price, currentTP, "TP2 移動止損至 TP1");
+                  if(stageOK) Print("PrecisionSniperEA: 止損已移至 TP1 鎖利 (", g_tp1Price, ")。");
                }
-               
-               if(InpPartialExit)
+
+               if(stageOK && InpPartialExit)
                {
                   double closeVol = MathFloor((currentVol / 2.0) / step) * step;
                   if(closeVol < minLot) closeVol = minLot;
                   if(closeVol < currentVol)
                   {
-                     trade.PositionClosePartial(ticket, closeVol);
-                     Print("PrecisionSniperEA: TP2 分批平倉剩餘的一半 (", closeVol, " Lots)。");
+                     stageOK = ClosePartialChecked(ticket, closeVol, "TP2 分批平倉");
+                     if(stageOK) Print("PrecisionSniperEA: TP2 分批平倉剩餘的一半 (", closeVol, " Lots)。");
                   }
                }
+               if(stageOK) g_tp2Hit = true;
             }
-            
+
             // ── 第三階段：觸及 TP3 ──
             else if(price <= g_tp3Price)
             {
                Print("PrecisionSniperEA: 價格觸及最終目標 TP3 (", g_tp3Price, ")，全部平倉離場。");
-               trade.PositionClose(ticket);
-               ResetState();
+               if(ClosePositionChecked(ticket, "TP3 全部平倉"))
+                  ResetState();
             }
          }
       }
@@ -543,8 +820,9 @@ bool HasPosition(ENUM_POSITION_TYPE type)
    return false;
 }
 
-void ClosePositions(ENUM_POSITION_TYPE type)
+bool ClosePositions(ENUM_POSITION_TYPE type)
 {
+   bool allClosed = true;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       ulong ticket = PositionGetTicket(i);
@@ -553,13 +831,17 @@ void ClosePositions(ENUM_POSITION_TYPE type)
          PositionGetInteger(POSITION_TYPE) == type)
       {
          Print("PrecisionSniperEA: 反向信號觸發平倉。平倉單號: ", ticket);
-         trade.PositionClose(ticket);
+         if(!ClosePositionChecked(ticket, "反向信號平倉"))
+            allClosed = false;
       }
    }
    if(!HasPosition(POSITION_TYPE_BUY) && !HasPosition(POSITION_TYPE_SELL))
    {
       ResetState();
    }
+   if(HasPosition(type))
+      allClosed = false;
+   return allClosed;
 }
 
 void ResetState()
@@ -571,6 +853,8 @@ void ResetState()
    g_tp3Price     = 0;
    g_riskVal      = 0;
    g_positionDir  = 0;
+   g_tp1Hit       = false;
+   g_tp2Hit       = false;
 }
 
 //====================================================================
@@ -587,7 +871,7 @@ void CreateEAPanel()
    // 1. 面板標題列
    MakeRect("PSEA_Title_BG", X, Y, W, 24, C_TITLE_BG, C_TITLE_FG);
    MakeTxt("PSEA_Title_TX", X+8, Y+5, "PRECISION SNIPER EA", C_TITLE_FG, 10, "Arial Bold");
-   MakeTxt("PSEA_Title_VER", X+220, Y+7, "[v1.00]", C'180,180,180', 7, "Arial");
+   MakeTxt("PSEA_Title_VER", X+220, Y+7, "[v1.20]", C'180,180,180', 7, "Arial");
    Y += 27;
    
    // 2. 交易狀態列
@@ -708,5 +992,26 @@ void SetVal(string name, string val, color col)
       ObjectSetString(0, name, OBJPROP_TEXT, val);
       ObjectSetInteger(0, name, OBJPROP_COLOR, col);
    }
+}
+
+//====================================================================
+// 優化適應度函數 (OnTester) — 供 Strategy Tester 參數優化排序使用
+//====================================================================
+// 目標：在「回報 / 相對回撤」的基礎上兼顧穩定度 (Profit Factor)，
+//       並要求最低交易樣本數以抑制過擬合 (overfitting)。
+double OnTester()
+{
+   double trades = TesterStatistics(STAT_TRADES);
+   if(trades < 30) return 0.0;            // 樣本不足：不予採納，避免過擬合
+
+   double profit = TesterStatistics(STAT_PROFIT);
+   if(profit <= 0) return 0.0;            // 不獲利的組合直接淘汰
+
+   double dd = TesterStatistics(STAT_EQUITY_DDREL_PERCENT); // 相對淨值回撤 %
+   double pf = TesterStatistics(STAT_PROFIT_FACTOR);
+
+   double fitness = (dd > 0) ? (profit / dd) : profit;      // 回報 / 回撤
+   fitness *= MathMin(pf, 5.0);                             // 兼顧穩定度，封頂避免極端值主導
+   return fitness;
 }
 //+------------------------------------------------------------------+

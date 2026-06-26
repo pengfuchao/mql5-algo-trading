@@ -152,6 +152,24 @@ datetime g_btEntryTime = 0;  // time of current open trade entry
 string DPF = "PS_";
 
 //+------------------------------------------------------------------+
+// Return the HTF shift whose bar is fully closed as of asOfTime.
+// This avoids using the still-forming HTF candle when evaluating lower-TF signals.
+int ClosedHTFShiftAt(datetime asOfTime, ENUM_TIMEFRAMES tf)
+{
+   if(tf == PERIOD_CURRENT) return 0;
+
+   int shift = iBarShift(_Symbol, tf, asOfTime - 1, false);
+   if(shift < 0) return -1;
+
+   int tfSec = PeriodSeconds(tf);
+   datetime htfOpen = iTime(_Symbol, tf, shift);
+   if(tfSec > 0 && htfOpen > 0 && (htfOpen + tfSec) > asOfTime)
+      shift++;
+
+   return shift;
+}
+
+//+------------------------------------------------------------------+
 void ApplyPreset()
 {
    ENUM_PRESET p = Preset;
@@ -234,6 +252,12 @@ int OnInit()
    PlotIndexSetInteger(4, PLOT_ARROW_SHIFT,  15);
    PlotIndexSetDouble(3, PLOT_EMPTY_VALUE, 0.0);
    PlotIndexSetDouble(4, PLOT_EMPTY_VALUE, 0.0);
+   // Keep EA-facing buffers populated even when chart plots are hidden.
+   PlotIndexSetInteger(0, PLOT_DRAW_TYPE, ShowEMA ? DRAW_LINE : DRAW_NONE);
+   PlotIndexSetInteger(1, PLOT_DRAW_TYPE, ShowEMA ? DRAW_LINE : DRAW_NONE);
+   PlotIndexSetInteger(2, PLOT_DRAW_TYPE, ShowEMA ? DRAW_LINE : DRAW_NONE);
+   PlotIndexSetInteger(3, PLOT_DRAW_TYPE, ShowSignals ? DRAW_ARROW : DRAW_NONE);
+   PlotIndexSetInteger(4, PLOT_DRAW_TYPE, ShowSignals ? DRAW_ARROW : DRAW_NONE);
 
    hEmaFast  = iMA(_Symbol, PERIOD_CURRENT, pFast,  0, MODE_EMA, PRICE_CLOSE);
    hEmaSlow  = iMA(_Symbol, PERIOD_CURRENT, pSlow,  0, MODE_EMA, PRICE_CLOSE);
@@ -590,7 +614,10 @@ int OnCalculate(const int rates_total,
    ArraySetAsSeries(dip,  true); ArraySetAsSeries(dim,  true);
    ArraySetAsSeries(htfF, true); ArraySetAsSeries(htfS, true);
 
-   int copyCount = (prev_calculated <= 1) ? rates_total : 3;
+   int requiredLookback = MathMax(50, SwingLB + 5);
+   if(BtMode == BT_ROLLING)
+      requiredLookback = MathMax(requiredLookback, BtRollingBars + 50);
+   int copyCount = (prev_calculated <= 1) ? rates_total : MathMin(rates_total, requiredLookback);
 
    if(CopyBuffer(hEmaFast,  0, 0, copyCount, ef)  <= 0) return 0;
    if(CopyBuffer(hEmaSlow,  0, 0, copyCount, es)  <= 0) return 0;
@@ -635,9 +662,9 @@ int OnCalculate(const int rates_total,
    for(int i = s; i < rates_total; i++)
    {
       int r = rates_total - 1 - i;
-      bufEmaFast[i]  = ShowEMA ? ((r < ArraySize(ef)) ? ef[r]  : EMPTY_VALUE) : EMPTY_VALUE;
-      bufEmaSlow[i]  = ShowEMA ? ((r < ArraySize(es)) ? es[r]  : EMPTY_VALUE) : EMPTY_VALUE;
-      bufEmaTrend[i] = ShowEMA ? ((r < ArraySize(et)) ? et[r]  : EMPTY_VALUE) : EMPTY_VALUE;
+      bufEmaFast[i]  = (r < ArraySize(ef)) ? ef[r] : EMPTY_VALUE;
+      bufEmaSlow[i]  = (r < ArraySize(es)) ? es[r] : EMPTY_VALUE;
+      bufEmaTrend[i] = (r < ArraySize(et)) ? et[r] : EMPTY_VALUE;
       bufBuy[i]  = 0.0;
       bufSell[i] = 0.0;
    }
@@ -674,11 +701,19 @@ int OnCalculate(const int rates_total,
       double cRsi = rsi[r], cAtr = atr[r];
       double cMm  = mm[r],  cMs  = ms[r];
       double cAdx = adx[r], cDip = dip[r], cDim = dim[r];
-      // Fix6b: Safely align multi-timeframe index using iBarShift to eliminate look-ahead bias
-      int htfShift = (HTF == PERIOD_CURRENT) ? r : iBarShift(_Symbol, HTF, time[i], false);
-      int htfR = htfShift;
-      if(htfR < 0 || htfR >= ArraySize(htfF)) htfR = 0;
-      double cHtfF = htfF[htfR], cHtfS = htfS[htfR];
+      // Causal HTF alignment: use only the HTF bar already closed at this bar's close.
+      int htfR = r;
+      if(HTF != PERIOD_CURRENT)
+      {
+         datetime barCloseTime = time[i] + PeriodSeconds(PERIOD_CURRENT);
+         htfR = ClosedHTFShiftAt(barCloseTime, HTF);
+      }
+      double cHtfF = 0.0, cHtfS = 0.0;
+      if(htfR >= 0 && htfR < ArraySize(htfF) && htfR < ArraySize(htfS))
+      {
+         cHtfF = htfF[htfR];
+         cHtfS = htfS[htfR];
+      }
       double cl   = close[i], hi = high[i], lo = low[i];
 
       // Volume
@@ -872,22 +907,14 @@ int OnCalculate(const int rates_total,
       }
 
       // Fill signal buffers
-      if(ShowSignals && doBuy)  bufBuy[i]  = lo - cAtr*0.8;
-      if(ShowSignals && doSell) bufSell[i] = hi + cAtr*0.8;
+      if(doBuy)  bufBuy[i]  = lo - cAtr*0.8;
+      if(doSell) bufSell[i] = hi + cAtr*0.8;
 
    }
 
-   //--- Step 5b: End-of-history open trade recording (Bug3 fix)
-   // If a trade was opened but never closed by SL/TP by end of history,
-   // record its current state so Total = Wins + Losses + BE always.
-   // Use a flag to avoid double-counting on incremental recalcs.
-   if(fullReset && g_dir != 0 && !g_slh && g_eBar >= 0)
-   {
-      double rv;
-      if(UseTrail) rv = g_tp3h?TP2_RR:g_tp2h?TP1_RR:g_tp1h?0.0:-1.0;
-      else         rv = g_tp3h?TP3_RR:g_tp2h?TP2_RR:g_tp1h?TP1_RR:-1.0;
-      RecordTrade(rv, g_btEntryTime, true);  // Fix4: end-of-history — not an actual SL hit
-   }
+   // Open trades at the end of history remain marked as Active in the dashboard.
+   // They are intentionally not counted as closed trades to avoid double-counting
+   // when the current/live bar later hits TP/SL.
 
    //--- Step 6: Current (last) bar processing
    int last = rates_total - 1;
@@ -958,10 +985,15 @@ int OnCalculate(const int rates_total,
       {
          double cAtr2= (0<ArraySize(atr))?atr[0]:0;
          double typPrice2=(high[last]+low[last]+close[last])/3.0; // Correct Typical Price calculation
-         int htfBias2=(htfF[0]>htfS[0])?1:(htfF[0]<htfS[0])?-1:0;
+         int htfDashR = 0;
+         if(HTF != PERIOD_CURRENT)
+            htfDashR = ClosedHTFShiftAt(TimeCurrent(), HTF);
+         int htfBias2 = 0;
+         if(htfDashR >= 0 && htfDashR < ArraySize(htfF) && htfDashR < ArraySize(htfS))
+            htfBias2=(htfF[htfDashR]>htfS[htfDashR])?1:(htfF[htfDashR]<htfS[htfDashR])?-1:0;
          bool strong2=(adx[0]>20.0);
 
-         double atrSum2=0; int atrCnt2=MathMin(42,last+1);
+         double atrSum2=0; int atrCnt2=MathMin(42, ArraySize(atr));
          for(int k=0;k<atrCnt2;k++){int rk=k;if(rk<ArraySize(atr))atrSum2+=atr[rk];}
          double atrSma2=(atrCnt2>0)?atrSum2/atrCnt2:cAtr2;
          double vr2=(atrSma2>0)?cAtr2/atrSma2:1.0;
