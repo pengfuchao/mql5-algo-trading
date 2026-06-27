@@ -1,11 +1,11 @@
 //+------------------------------------------------------------------+
 //|                                           PrecisionSniperEA.mq5 |
 //|                           Developer: Hammad Dilber & Antigravity |
-//|                           Version  : 1.20                        |
+//|                           Version  : 1.21                        |
 //|                           Description: PrecisionSniper EA        |
 //+------------------------------------------------------------------+
 #property copyright "Hammad Dilber & Antigravity"
-#property version   "1.20"
+#property version   "1.21"
 #property description "PrecisionSniper 實盤自動跟單 Expert Advisor"
 
 // 引入 MT5 標準交易庫
@@ -74,6 +74,17 @@ input int             CooldownBars   = 5;            // 信號最小冷卻棒數
 input bool            UseTrail       = true;         // 啟用移動止損保本
 input ENUM_SL_TYPE    SLType         = SL_STRUCTURE; // 止損計算方式
 input int             SwingLB        = 10;           // 結構止損回溯棒數
+input bool            InpUseMaxHoldingBars = false;  // 啟用最大持倉K棒限制
+input int             InpMaxHoldingBars    = 48;     // 最大持倉K棒數 (依當前週期)
+input bool            InpUseSessionFilter  = false;  // 啟用新倉交易時段過濾
+input int             InpSessionStartHour  = 7;      // 允許開新倉起始小時 (伺服器時間)
+input int             InpSessionEndHour    = 22;     // 允許開新倉結束小時 (伺服器時間，不含)
+input bool            InpUseNoOvernightExit = false; // 啟用隔夜風險控制
+input int             InpNoNewTradeAfterHour = 22;   // 每日此小時後不開新倉 (伺服器時間)
+input int             InpForceExitHour       = 23;   // 每日此小時後強制平倉 (伺服器時間)
+input bool            InpUseFridayExit       = false;// 啟用週五提前收倉
+input int             InpFridayNoNewTradeAfterHour = 20; // 週五此小時後不開新倉
+input int             InpFridayForceExitHour       = 21; // 週五此小時後強制平倉
 
 input string          __FILTER_SET__ = "====== [ 信號過濾篩選 ] ======";
 input ENUM_GRADE_FILTER GradeFilter  = GRADE_ALL;      // 信號等級篩選 (Grade Filter)
@@ -220,6 +231,82 @@ bool TradingAllowedFor(ENUM_POSITION_TYPE type)
    return true;
 }
 
+bool ValidHour(int hour)
+{
+   return (hour >= 0 && hour <= 23);
+}
+
+bool HourInWindow(int hour, int startHour, int endHour)
+{
+   if(startHour == endHour) return true; // 0~24 全日允許
+   if(startHour < endHour)
+      return (hour >= startHour && hour < endHour);
+   return (hour >= startHour || hour < endHour); // 支援跨午夜 session
+}
+
+bool NewEntriesAllowedByTime()
+{
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+
+   if(InpUseSessionFilter && !HourInWindow(dt.hour, InpSessionStartHour, InpSessionEndHour))
+   {
+      Print("PrecisionSniperEA: 目前不在允許開新倉時段，略過新倉。server_hour=", dt.hour);
+      return false;
+   }
+
+   if(InpUseFridayExit && dt.day_of_week == 5 && dt.hour >= InpFridayNoNewTradeAfterHour)
+   {
+      Print("PrecisionSniperEA: 週五 cutoff 後不開新倉。server_hour=", dt.hour);
+      return false;
+   }
+
+   if(InpUseNoOvernightExit && dt.hour >= InpNoNewTradeAfterHour)
+   {
+      Print("PrecisionSniperEA: 隔夜風控 cutoff 後不開新倉。server_hour=", dt.hour);
+      return false;
+   }
+
+   return true;
+}
+
+bool ShouldForceFlatNow(string &reason)
+{
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+
+   if(InpUseFridayExit && dt.day_of_week == 5 && dt.hour >= InpFridayForceExitHour)
+   {
+      reason = "週五提前強制平倉";
+      return true;
+   }
+
+   if(InpUseNoOvernightExit && dt.hour >= InpForceExitHour)
+   {
+      reason = "隔夜風控強制平倉";
+      return true;
+   }
+
+   return false;
+}
+
+bool ShouldCloseByMaxHoldingBars(string &reason)
+{
+   if(!InpUseMaxHoldingBars) return false;
+
+   datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
+   int barsOpen = iBarShift(Symbol(), PERIOD_CURRENT, openTime, false);
+   if(barsOpen < 0) return false;
+
+   if(barsOpen >= InpMaxHoldingBars)
+   {
+      reason = "最大持倉K棒限制觸發，bars_open=" + IntegerToString(barsOpen);
+      return true;
+   }
+
+   return false;
+}
+
 //====================================================================
 // EA 初始化函數 (OnInit)
 //====================================================================
@@ -248,6 +335,14 @@ int OnInit()
       TP1_RR > TP2_RR || TP2_RR > TP3_RR || CooldownBars < 0 || SwingLB < 1)
    {
       Print("PrecisionSniperEA: PrecisionSniper inputs 無效。");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if((InpUseMaxHoldingBars && InpMaxHoldingBars < 1) ||
+      !ValidHour(InpSessionStartHour) || !ValidHour(InpSessionEndHour) ||
+      !ValidHour(InpNoNewTradeAfterHour) || !ValidHour(InpForceExitHour) ||
+      !ValidHour(InpFridayNoNewTradeAfterHour) || !ValidHour(InpFridayForceExitHour))
+   {
+      Print("PrecisionSniperEA: 短線交易控制 inputs 無效。");
       return INIT_PARAMETERS_INCORRECT;
    }
    
@@ -397,6 +492,7 @@ void OpenPosition(ENUM_POSITION_TYPE type)
 {
    // 檢查是否有同類型持倉以防重覆開倉
    if(HasPosition(type)) return;
+   if(!NewEntriesAllowedByTime()) return;
    if(!TradingAllowedFor(type)) return;
    
    double ask = SymbolInfoDouble(Symbol(), SYMBOL_ASK);
@@ -617,6 +713,15 @@ void ManagePositionExits()
          double ask = SymbolInfoDouble(Symbol(), SYMBOL_ASK);
          double bid = SymbolInfoDouble(Symbol(), SYMBOL_BID);
          double price = (posType == POSITION_TYPE_BUY) ? bid : ask;
+
+         string forcedReason = "";
+         if(ShouldForceFlatNow(forcedReason) || ShouldCloseByMaxHoldingBars(forcedReason))
+         {
+            Print("PrecisionSniperEA: ", forcedReason, "。平倉單號: ", ticket);
+            if(ClosePositionChecked(ticket, forcedReason))
+               ResetState();
+            continue;
+         }
          
          // 狀態恢復與容錯：若 EA 重啟，則根據持倉與預設比例動態還原價格水平
          if(g_positionDir == 0 || MathAbs(g_entryPrice - openPrice) > g_point)
@@ -871,7 +976,7 @@ void CreateEAPanel()
    // 1. 面板標題列
    MakeRect("PSEA_Title_BG", X, Y, W, 24, C_TITLE_BG, C_TITLE_FG);
    MakeTxt("PSEA_Title_TX", X+8, Y+5, "PRECISION SNIPER EA", C_TITLE_FG, 10, "Arial Bold");
-   MakeTxt("PSEA_Title_VER", X+220, Y+7, "[v1.20]", C'180,180,180', 7, "Arial");
+   MakeTxt("PSEA_Title_VER", X+220, Y+7, "[v1.21]", C'180,180,180', 7, "Arial");
    Y += 27;
    
    // 2. 交易狀態列

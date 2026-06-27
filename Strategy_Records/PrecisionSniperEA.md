@@ -262,12 +262,183 @@ Reports：
 - H4 相比 H1：PF、Expected Payoff、Net Profit、Drawdown 都改善，且仍有 108 筆交易。
 - D1 數字最好，但只有 19 筆交易，統計意義不足，且平均持倉約 41.8 天，需額外考慮 swap、隔週風險、重大事件風險與資金占用。
 
+### 5.1 H4 年度拆分與 200ms delay
+
+Reports：
+
+- `ReportTester-PS-H4-2023.html`
+- `ReportTester-PS-H4-2024.html`
+- `ReportTester-PS-H4-2025.html`
+- `ReportTester-PS-H4-2026.html`
+- `ReportTester-PS-H4-2020-2026-200ms.html`
+
+| Period / Setting | Net Profit | PF | Expected Payoff | Sharpe | Trades | Win Rate | Max Equity DD |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| H4 2023 | 117.74 | 3.31 | 5.89 | 1.72 | 20 | 35.00% | 30.72 / 0.31% |
+| H4 2024 | -45.94 | 0.36 | -2.87 | -1.06 | 16 | 25.00% | 65.73 / 0.66% |
+| H4 2025 | 31.90 | 1.72 | 1.88 | 0.82 | 17 | 29.41% | 28.56 / 0.29% |
+| H4 2026 YTD | -8.21 | 0.70 | -0.82 | -0.13 | 10 | 20.00% | 28.36 / 0.28% |
+| H4 2020.06.26–2026.06.26, 200ms delay | 99.38 | 1.24 | 0.91 | 0.48 | 109 | 30.28% | 79.12 / 0.78% |
+
+判讀：
+
+- H4 直接交易長樣本與 200ms delay 初步穩定，但年度拆分不穩，且平均持倉時間偏長。
+- 2024 與 2026 YTD 為負，代表 H4 也不是穩定跨 regime edge。
+- 使用者目標偏向 H1 / M15 短線，以降低 overnight / swap exposure，因此 H4 不應直接視為最終策略，只能作為 benchmark 或 trend context。
+
+### 5.2 短週期 + HTF filter 測試
+
+Reports：
+
+- `PSM15H120202026.html`
+- `PSH1H420202026.html`
+
+| Setting | Net Profit | PF | Expected Payoff | Sharpe | Trades | Win Rate | Avg Holding |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| H1 baseline | 50.46 | 1.06 | 0.12 | 0.33 | 423 | 30.73% | 27:05:00 |
+| H1 + H4 filter | -6.70 | 0.99 | -0.02 | -0.06 | 316 | 31.33% | 29:20:31 |
+| M15 + H1 filter | -163.11 | 0.87 | -0.12 | -1.15 | 1325 | 30.64% | 8:36:13 |
+
+判讀：
+
+- H1 + H4 filter 不採用：相較 H1 baseline，edge 消失。
+- M15 + H1 filter 平均持倉時間較符合短線目標，但績效明確為負。
+- HTF filter 本身沒有解決 H1/M15 短線獲利問題，下一步應測出場與時間風控，而不是繼續單純調 score / grade / HTF。
+
+### 5.3 新增短線研究控制
+
+為支援短線研究，`PrecisionSniperEA.mq5` v1.21 新增以下預設關閉 inputs：
+
+- `InpUseMaxHoldingBars` / `InpMaxHoldingBars`：依當前週期限制最大持倉 K 棒，觸發後平掉本 EA 的 symbol + MagicNumber 持倉。
+- `InpUseSessionFilter` / `InpSessionStartHour` / `InpSessionEndHour`：只允許在指定伺服器時間區間開新倉，支援跨午夜 session。
+- `InpUseNoOvernightExit` / `InpNoNewTradeAfterHour` / `InpForceExitHour`：每日 cutoff 後不開新倉，並在 force-exit hour 後強制平倉。
+- `InpUseFridayExit` / `InpFridayNoNewTradeAfterHour` / `InpFridayForceExitHour`：週五提前停止新倉與強制收倉，降低 weekend exposure。
+
+設計原則：
+
+- 預設關閉，因此既有 baseline 回測不應改變。
+- 這些 controls 不改 PrecisionSniper signal buffer，也不改核心進場訊號邏輯。
+- Session / cutoff 只阻止新倉；既有持倉的 TP/SL/分批/forced exit 仍會管理。
+- 反向訊號仍可先平掉反向倉，但若當下不允許新倉，不會反手開新方向。
+
+### 5.4 M15 短線候選：MaxHolding + Session
+
+共用短線設定：
+
+```text
+Period=M15
+HTF=H1
+Preset=Default
+GradeFilter=All
+InpUseMaxHoldingBars=true
+InpMaxHoldingBars=16
+InpUseSessionFilter=true
+InpUseNoOvernightExit=false
+InpUseFridayExit=false
+Delay=208ms
+```
+
+#### EURUSD 候選比較
+
+| Candidate | Session | Total Net Profit | Total Trades | 年度特徵 |
+|---|---:|---:|---:|---|
+| A | 14–16 | 18.21 | 71 | 2023 明顯負，2026 強但樣本少 |
+| B | 12–16 | 19.34 | 140 | 2023 僅小虧，年度分布較穩 |
+
+EURUSD Candidate B 年度拆分：
+
+| Year | Net Profit | PF | Expected Payoff | Sharpe | Trades | Max Equity DD | Avg Holding |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 2023 | -1.44 | 0.96 | -0.034 | -0.71 | 42 | 0.21% | 2:36:58 |
+| 2024 | 11.73 | 1.44 | 0.279 | 7.34 | 42 | 0.12% | 2:38:40 |
+| 2025 | 1.65 | 1.06 | 0.046 | 0.77 | 36 | 0.13% | 3:07:08 |
+| 2026 YTD | 7.40 | 1.46 | 0.370 | 6.31 | 20 | 0.12% | 2:57:34 |
+
+EURUSD spread stress：
+
+| MaxSpread | Profit | PF | Expected Payoff | Sharpe | Trades |
+|---:|---:|---:|---:|---:|---:|
+| 20 | 11.69 | 1.057 | 0.048 | 0.91 | 243 |
+| 25 | -8.44 | 0.959 | -0.036 | -0.69 | 233 |
+| 30 | -6.36 | 0.969 | -0.028 | -0.53 | 229 |
+
+判讀：
+
+- EURUSD 短線版本可研究，但 edge 很薄。
+- `MaxSpread=20` 是唯一正收益；不能放寬 spread filter。
+
+#### 多商品 robustness
+
+Candidate B 同設定套用至其他商品：
+
+| Symbol | Net Profit | PF | Expected Payoff | Sharpe | Trades | Max Equity DD | Avg Holding | 判讀 |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| USDJPY | 55.31 | 1.35 | 0.26 | 5.28 | 211 | 0.26% | 2:53:55 | 最佳候選 |
+| EURUSD | 11.69 | 1.057 | 0.048 | 0.91 | 243 | 0.42% | 約 2–3 小時 | 可保留但 edge 薄 |
+| XAUUSD | 23.04 | 1.02 | 0.10 | 0.67 | 234 | 2.12% | 2:31:27 | 接近 breakeven，DD 較高 |
+| GBPUSD | -30.88 | 0.91 | -0.12 | -1.81 | 257 | 0.88% | 2:48:40 | 淘汰目前設定 |
+
+#### USDJPY 最佳候選
+
+目前最佳 USDJPY 設定：
+
+```text
+Symbol=USDJPY
+Period=M15
+HTF=H1
+InpMaxSpread=15
+InpUseMaxHoldingBars=true
+InpMaxHoldingBars=16
+InpUseSessionFilter=true
+InpSessionStartHour=12
+InpSessionEndHour=16
+Delay tested: 208ms, 500ms, 1000ms
+```
+
+USDJPY `MaxSpread=15` 年度拆分：
+
+| Year | Net Profit | PF | Expected Payoff | Sharpe | Trades | Max Equity DD | Avg Holding |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 2020 H2 | -3.38 | 0.71 | -0.169 | -4.16 | 20 | 0.06% | 3:12:34 |
+| 2021 | 0.72 | 1.03 | 0.021 | 0.64 | 35 | 0.11% | 2:39:58 |
+| 2022 | 6.66 | 1.24 | 0.196 | 2.99 | 34 | 0.15% | 3:18:28 |
+| 2023 | 2.11 | 1.05 | 0.057 | 1.09 | 37 | 0.24% | 2:22:53 |
+| 2024 | 1.14 | 1.03 | 0.031 | 0.56 | 37 | 0.20% | 2:18:29 |
+| 2025 | 40.41 | 3.47 | 1.123 | 16.93 | 36 | 0.09% | 3:26:15 |
+| 2026 YTD | 13.96 | 5.85 | 0.873 | 10.95 | 16 | 0.04% | 3:31:21 |
+
+USDJPY `MaxSpread=15/20/25/30` stress：
+
+| MaxSpread | Profit | PF | Expected Payoff | Sharpe | Equity DD | Trades |
+|---:|---:|---:|---:|---:|---:|---:|
+| 15 | 61.19 | 1.391 | 0.283 | 5.35 | 0.249% | 216 |
+| 20 | 56.13 | 1.368 | 0.266 | 5.01 | 0.251% | 211 |
+| 25 | 56.97 | 1.382 | 0.277 | 5.18 | 0.251% | 206 |
+| 30 | 56.99 | 1.382 | 0.278 | 5.20 | 0.264% | 205 |
+
+USDJPY delay stress：
+
+| Delay | Net Profit | PF | Expected Payoff | Sharpe | Trades | Max Equity DD |
+|---:|---:|---:|---:|---:|---:|---:|
+| 208ms | 61.19 | 1.391 | 0.283 | 5.35 | 216 | 0.249% |
+| 500ms | 62.56 | 1.400 | 0.290 | 5.43 | 216 | 0.24% |
+| 1000ms | 58.96 | 1.377 | 0.273 | 5.13 | 216 | 0.25% |
+
+判讀：
+
+- USDJPY 是目前最強 short-term candidate。
+- 2021–2026 全部年度為正，但 2021、2023、2024 接近 breakeven；2020 H2 為負。
+- Edge 主要來自 2025–2026，仍可能存在 regime dependency。
+- 以 `Profit=61.19 / Trades=216` 粗估，額外 commission + slippage 的 breakeven buffer 約 `0.283 USD/trade`。
+- 500ms / 1000ms 延遲測試仍穩定正收益，execution delay sensitivity 初步通過。
+
 ## 6. 目前結論
 
 ### 保留研究
 
-- `EURUSD / H4 / Preset=Default / HTF=0 / GradeFilter=All`
-- `EURUSD / H1 / Preset=Default / HTF=0 / GradeFilter=All` 作為 baseline comparison
+- `USDJPY / M15 / HTF=H1 / MaxSpread=15 / MaxHoldingBars=16 / Session=12–16` 作為目前最佳 short-term candidate。
+- `EURUSD / M15 / HTF=H1 / MaxSpread=20 / MaxHoldingBars=16 / Session=12–16` 可保留為次要候選，但 edge 較薄。
+- `EURUSD / H4 / Preset=Default / HTF=0 / GradeFilter=All` 僅作 benchmark，不符合短線低 swap 目標。
 
 ### 暫不採用
 
@@ -275,35 +446,29 @@ Reports：
 - H1 `Custom MinScore=6`
 - H1 `Custom MinScore=7`
 - D1 作為主策略設定：目前 trades 太少，只能作為觀察候選
+- GBPUSD Candidate B 目前設定。
+- XAUUSD Candidate B 暫不優先，因 PF 接近 1 且 drawdown 較高。
 
 ### 核心風險
 
 - H1 長樣本 edge 很薄。
-- 2023 / 2024 regime 明顯拖累。
+- H4 雖比 H1 好，但持倉時間過長，不符合降低 overnight / swap exposure 的主要目標。
+- 2023 / 2024 regime 明顯拖累；H4 年度拆分亦顯示 2024 與 2026 YTD 偏弱。
 - 目前多數測試使用 fixed 0.01 lot，金額結果不代表可放大後的真實風險承受度。
 - 0.01 lot 無法完整驗證 partial close；partial close 功能測試應另用 0.03 lot 短期間 smoke test。
-- 目前尚未完成 H4 年度拆分、H1+HTF filter、spread/delay stress test、多商品 robustness。
+- USDJPY 最佳候選仍有 2020 H2 負收益，且 2021/2023/2024 只是接近 breakeven。
+- USDJPY edge 的額外成本容忍度約 `0.283 USD/trade`，需確認 broker commission、spread 與實際 slippage。
 
 ## 7. 下一步測試計畫
 
 優先順序：
 
-1. H4 年度拆分：
-   - `EURUSD / H4 / 2023.01.01 - 2023.12.31`
-   - `EURUSD / H4 / 2024.01.01 - 2024.12.31`
-   - `EURUSD / H4 / 2025.01.01 - 2025.12.31`
-   - `EURUSD / H4 / 2026.01.01 - 2026.06.26`
-2. H1 + HTF filter：
-   - `Period=H1, HTF=H4`
-   - `Period=H1, HTF=D1`
-3. Execution stress：
-   - Delay = 200 ms
-   - Max spread = 20 / 25 / 30
-4. 多商品 robustness：
-   - GBPUSD H4
-   - USDJPY H4
-   - XAUUSD H4，需獨立檢查 spread / stop level / tick value
-5. Partial close 功能測試：
+1. USDJPY 最佳候選進入 demo forward test：
+   - 記錄實際 spread、commission、slippage、拒單、成交時間與持倉時間。
+2. 若要正式驗證交易成本，建立 custom symbol 或使用實際 broker demo account 測 commission / execution。
+3. 對 USDJPY 做更保守成本情境：
+   - 手動用 `Adjusted Profit = Net Profit - Trades × extra_cost_per_trade` 評估 0.10 / 0.20 / 0.30 USD per trade。
+4. Partial close 功能測試：
    - 用 `InpLots=0.03`
    - 短期間測試 TP1 / TP2 分批平倉是否符合預期
 
