@@ -25,7 +25,26 @@
 - 先看穩定性，再看最大報酬。
 - 每次只改少量 inputs，避免不知道哪個變數造成結果變化。
 - 不把 in-sample 最佳組合直接視為 production setting。
+- **OOS 必須在任何 screening 或優化「之前」就切走並封存**，封存區間不得用於選 symbol、timeframe 或參數，否則 OOS 已被污染、失去驗證意義。
+- **記錄整個研究過程的總試驗次數**（symbol × timeframe × 參數組合）。試驗越多，最佳結果為運氣的機率越高，Sharpe 的可信門檻也要跟著提高（見 Step 9 的 DSR / PBO）。
 - 所有 report 必須記錄 timeframe、symbol、date range、delay、spread、commission、slippage、核心 inputs 與結論。
+
+### 1.3 時區與環境基準
+
+所有 session filter、no overnight entry、Friday exit、rollover 判斷都以 **broker server time** 為準（不是台灣時間、也不是 GMT），因此每份紀錄都要標明 broker 時區與當下處於夏令或冬令。
+
+多數 MT5 broker 採美國 DST 規則：
+
+| 期間 | Broker server time | 與台灣（GMT+8）差距 |
+|---|---|---|
+| 夏令（約 3 月至 11 月） | GMT+3 | 台灣比 server 快 5 小時 |
+| 冬令（約 11 月至 3 月） | GMT+2 | 台灣比 server 快 6 小時 |
+
+注意事項：
+
+- DST 切換的那兩週，London / New York overlap 對應的 server hour 會位移 1 小時；session filter 若寫死 server hour，overlap 會跑掉。回測涵蓋多年時，這個位移會週期性污染 session 統計。
+- **Swap 三倍日**：多數 FX 在 broker 的**週三**收三倍 swap（部分商品在週五），不是只有週五要注意。短線降 swap 策略必須同時測週三三倍日。
+- 紀錄 session 時建議同時寫 server hour 與換算後的台灣時間，避免日後回溯混淆。
 
 ## 2. 建議總流程
 
@@ -40,6 +59,7 @@
   -> 參數粗優化
   -> out-of-sample / walk-forward
   -> spread / commission / slippage / delay / swap stress test
+  -> 統計穩健性與過擬合檢驗 (Monte Carlo / DSR / PBO)
   -> position sizing 與風控測試
   -> demo forward test
   -> production candidate or reject
@@ -112,6 +132,12 @@ baseline 是後續所有優化的參考點。
 | Delay | 先用接近實際 ping，例如 200ms 左右 |
 | Timeframe | 依策略假說，短線先 M15 或 H1 |
 | Date Range | 至少 3 至 6 年，若資料品質足夠可用 2020 至今 |
+
+資料品質要求：
+
+- Strategy Tester 的 modeling quality / history quality 要達可接受門檻（real tick 模式下盡量接近 100%），並記錄 tick data 來源與 broker。
+- **同一策略至少用 2 家 broker 的 tick data 各跑一次**。這是最便宜也最有效的 data-artifact 與過擬合偵測：若兩家結果差異巨大，通常是資料假象或對單一 broker 報價過度敏感，不是真 edge。
+- 留意週末跳空、重大新聞 spike 與 tick 缺漏對 real-tick 回測的影響。
 
 baseline 階段不要急著調參數。先回答：
 
@@ -268,6 +294,8 @@ XAUUSD 與 index CFD 的 tick value、spread、trading session、commission 與 
 
 ## 10. Step 7：Out-of-sample 與 walk-forward
 
+前提：OOS 區段必須在 Step 5 screening 與 Step 6 優化「之前」就已封存（見 1.2）。若你是先用全期間挑 symbol / 參數、事後才切 OOS，那段 OOS 已經被你看過，不算真正的樣本外。
+
 推薦至少切成：
 
 | 用途 | 範例 |
@@ -292,6 +320,12 @@ Train 2024-2025 -> Test 2026 YTD
 - OOS drawdown 不應明顯超過 IS。
 - 參數不應每段大幅漂移。
 - 若最佳參數頻繁改變，代表策略 edge 可能不穩。
+
+量化門檻建議：
+
+- **Sharpe degradation**：`OOS Sharpe / IS Sharpe` 過低即淘汰（例如 < 0.5）；同樣方式檢查 Profit Factor 與 Expected Payoff 的衰退。
+- **Walk-forward efficiency (WFE)**：`OOS 平均報酬 / IS 平均報酬`，長期低於約 0.5 代表優化主要在 fit 噪音。
+- 因為前面做了大量試驗，OOS Sharpe 要用 **Deflated Sharpe Ratio（DSR）** 觀念折扣後再判讀，不能直接看名目值（見 Step 9）。
 
 ## 11. Step 8：交易成本與執行 stress test
 
@@ -362,7 +396,9 @@ MT5 tester 對 slippage 的模擬能力有限，實務上應透過：
 - max holding time
 - overnight trades count
 - Friday holding risk
+- **三倍 swap 日持倉風險**（多數 FX 在 broker 週三，部分商品週五）
 - long swap 與 short swap 是否不對稱
+- 所有 rollover / session 判斷以 broker server time 為準（見 1.3）
 
 若目標是短線，建議測：
 
@@ -373,7 +409,41 @@ MT5 tester 對 slippage 的模擬能力有限，實務上應透過：
 
 但這些 time exit 會改變策略 payoff distribution，不能只看 profit，要同時看 trade count、expected payoff、drawdown 與 missed trend risk。
 
-## 12. Step 9：Position sizing 與風險測試
+## 12. Step 9：統計穩健性與過擬合檢驗
+
+走到這裡，策略已經有候選參數且能承受成本。但「在數百次試驗中挑出的最佳組合」本身就有 selection bias，這一步用來估計 edge 有多少機率只是運氣。
+
+### 12.1 Monte Carlo / bootstrap
+
+- **交易序列重排**：把成交序列隨機重排多次（例如 1000 次），看 Max Drawdown 與最終權益的分布，而不是只看單一回測的 Max DD。決策應使用 DD 分布的 95th percentile，而非單點值。
+- **隨機跳過交易 / bootstrap resampling**：隨機抽掉一定比例交易再重組，估出 equity curve 的信賴區間。
+- **隨機進場基準**：保留原本的出場與風控，但改用隨機進場。若隨機進場績效跟策略差不多，代表 edge 來自出場/風控而非進場訊號，原假說可能不成立。
+
+### 12.2 過擬合機率
+
+- **Deflated Sharpe Ratio（DSR）**：用「總試驗次數」與報酬分布的 skew / kurtosis，折扣掉多重檢定帶來的虛高 Sharpe。這也是 1.2 要記錄總試驗次數的原因。
+- **Probability of Backtest Overfitting（PBO，CSCV 法）**：把資料切成多段組合，檢查「IS 最佳組合在 OOS 變成後段班」的機率。PBO 偏高代表你的選擇流程本身在 fit 噪音。
+
+### 12.3 樣本量門檻
+
+交易數過少時，Profit Factor / Sharpe / Win Rate 都不可靠。建議硬性規則：全期至少約 200 至 300 筆，且每個主要 regime（或每年）有足夠樣本，才允許正式解讀，否則只能當 anecdotal 觀察。
+
+### 12.4 風險指標補充
+
+MT5 內建 Sharpe 為 per-trade、未年化、對交易頻率敏感，不可單獨引用。每個候選額外記錄：
+
+- **Sortino、Calmar / MAR、Recovery Factor、Ulcer Index**
+- **Time under water（最長水下時間）** 與 **最大連續虧損筆數**
+- 尾部風險：報酬分布的 skew，必要時估 CVaR
+
+### 12.5 組合層相關性
+
+若同時有多個候選 symbol / 策略要上線：
+
+- 計算候選之間 equity curve 的相關係數，避免高相關策略同時放大同一風險。
+- 用合併後的 portfolio equity 重新評估整體 Max DD 與資金配置，不能只看單策略結果。
+
+## 13. Step 10：Position sizing 與風險測試
 
 在策略 edge 尚未穩定前，先用 fixed lot。確認策略候選後，再測 risk-based sizing。
 
@@ -387,9 +457,9 @@ MT5 tester 對 slippage 的模擬能力有限，實務上應透過：
 
 若使用 partial close，最低測試手數不能太小。以 0.01 lot 測 partial close，很多 broker 會因最小手數限制導致部分平倉無法完整反映。
 
-## 13. Step 10：保留 / 淘汰決策規則
+## 14. Step 11：保留 / 淘汰決策規則
 
-### 13.1 可以保留研究的條件
+### 14.1 可以保留研究的條件
 
 - 全期間 profit 為正。
 - 多數年度不嚴重虧損。
@@ -398,8 +468,11 @@ MT5 tester 對 slippage 的模擬能力有限，實務上應透過：
 - spread / delay stress 後仍可接受。
 - drawdown 與持倉時間符合策略目標。
 - 策略邏輯可被金融直覺解釋。
+- OOS / walk-forward 未失效，Sharpe degradation 在可接受範圍。
+- Monte Carlo 後的 Max DD 95th percentile 仍可承受。
+- 多家 broker tick data 結果一致。
 
-### 13.2 應暫停或淘汰的條件
+### 14.2 應暫停或淘汰的條件
 
 - profit 主要來自單一年份或極少數交易。
 - 年度結果大多接近 0，但最佳化後剛好變正。
@@ -408,8 +481,12 @@ MT5 tester 對 slippage 的模擬能力有限，實務上應透過：
 - 不同 broker spread 或 delay 下表現大幅惡化。
 - drawdown、持倉時間或 swap exposure 不符合原始策略目標。
 - 策略需要大量特殊條件才盈利，且金融直覺薄弱。
+- PBO 偏高，或 DSR 折扣後 Sharpe 不顯著。
+- 隨機進場基準績效與策略相當（edge 不在進場）。
+- 不同 broker tick data 結果分歧巨大。
+- OOS Sharpe 相對 IS 大幅衰退。
 
-## 14. 建議實驗命名規則
+## 15. 建議實驗命名規則
 
 為了讓 report 可以回溯，建議檔名包含：
 
@@ -432,7 +509,7 @@ PS-EURUSD-M15-H1-2020_2026-MS20-MHB16-S12_16-D500.html
 - `S12_16` = Session 12 至 16
 - `D208` = Delay 208ms
 
-## 15. 每次實驗紀錄模板
+## 16. 每次實驗紀錄模板
 
 ````markdown
 ## YYYY-MM-DD - Experiment Name
@@ -458,6 +535,9 @@ PS-EURUSD-M15-H1-2020_2026-MS20-MHB16-S12_16-D500.html
 - Commission：
 - Slippage assumption：
 - Swap / overnight handling：
+- Broker / Tick data 來源：
+- Server time / DST（夏令 GMT+3 / 冬令 GMT+2）：
+- 累計試驗次數：
 
 ### 核心 inputs
 
@@ -475,7 +555,13 @@ InputC =
 | Profit Factor | |
 | Expected Payoff | |
 | Sharpe | |
+| Sortino | |
+| Calmar / MAR | |
+| Recovery Factor | |
 | Max Drawdown | |
+| MC Max DD p95 | |
+| Max 連續虧損筆數 | |
+| Time under water | |
 | Trades | |
 | Win Rate | |
 | Avg Holding Time | |
@@ -494,25 +580,27 @@ InputC =
 - 下一步：
 ````
 
-## 16. 建議研究順序摘要
+## 17. 建議研究順序摘要
 
 若是新策略，建議固定採用以下順序：
 
 1. 先寫清楚 strategy hypothesis。
-2. 檢查 indicator buffer 與 EA execution safety。
-3. 跑 1 至 3 個月 smoke test。
-4. 跑一個主要 symbol 的 2020 至今 baseline。
-5. 做年度切片。
-6. 測 M15、M15+H1、H1、H1+H4；H4 只作 benchmark。
-7. 固定 inputs 跑 major FX symbol screening。
-8. 選 1 至 3 個候選 symbol 做參數粗優化。
-9. 對候選參數做年度、OOS、walk-forward。
-10. 做 spread、delay、commission、slippage、swap stress test。
-11. 測 fixed lot 放大與 risk-based sizing。
-12. 做 demo forward test，收集真實 spread、slippage、execution retcode。
-13. 最後才決定是否成為 production candidate。
+2. 先切走並封存 OOS 區段，後續 screening / 優化不得使用。
+3. 檢查 indicator buffer 與 EA execution safety。
+4. 跑 1 至 3 個月 smoke test。
+5. 跑一個主要 symbol 的 2020 至今 baseline（至少 2 家 broker tick data）。
+6. 做年度切片。
+7. 測 M15、M15+H1、H1、H1+H4；H4 只作 benchmark。
+8. 固定 inputs 跑 major FX symbol screening。
+9. 選 1 至 3 個候選 symbol 做參數粗優化。
+10. 對候選參數做年度、OOS、walk-forward。
+11. 做 spread、delay、commission、slippage、swap stress test。
+12. 做 Monte Carlo、DSR、PBO 統計穩健性檢驗。
+13. 測 fixed lot 放大與 risk-based sizing，並評估 portfolio 相關性。
+14. 做 demo forward test，收集真實 spread、slippage、execution retcode；設定最短時長與 live-vs-backtest 偏離容忍門檻。
+15. 最後才決定是否成為 production candidate。
 
-## 17. 對短線 FX 策略的特別規則
+## 18. 對短線 FX 策略的特別規則
 
 短線策略的主要敵人通常不是方向判斷，而是交易成本與執行品質。
 
@@ -526,5 +614,7 @@ InputC =
 - 必須檢查持倉是否跨 rollover。
 - 必須逐年測，而不是只看總期間。
 - 若每年交易數太低，不能過度解讀最佳化結果。
+- session filter 一律以 broker server time 為準，並注意夏/冬令位移（見 1.3）。
+- 必須檢查週三三倍 swap 日的持倉。
 
 實務上，短線策略若無法承受 500ms delay、合理 commission、以及常見 spread 擴大，通常不適合作為 live candidate。
