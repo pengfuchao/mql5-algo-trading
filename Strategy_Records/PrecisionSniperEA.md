@@ -10,7 +10,7 @@
 - Indicator：`Indicators/PrecisionSniper.mq5`
 - Symbol：EURUSD
 - Tester：MetaQuotes-Demo，Build 5836
-- Server time：夏令 GMT+3 / 冬令 GMT+2（session、overnight、Friday exit 皆以此為準）
+- Server time：待以 terminal / broker specification 確認；目前研究假設為夏令 GMT+3 / 冬令 GMT+2（session、overnight、Friday exit 皆以實際 broker server time 為準）
 - 初始入金：10000 USD
 - Leverage：1:100
 - Modeling：Every tick based on real ticks
@@ -322,7 +322,7 @@ Reports：
 - 預設關閉，因此既有 baseline 回測不應改變。
 - 這些 controls 不改 PrecisionSniper signal buffer，也不改核心進場訊號邏輯。
 - Session / cutoff 只阻止新倉；既有持倉的 TP/SL/分批/forced exit 仍會管理。
-- Session / cutoff / Friday exit 的小時數均為 **broker server time**（夏令 GMT+3、冬令 GMT+2）；DST 切換週 London/NY overlap 會位移 1 小時，回測跨多年時需注意 session 統計被位移污染。換 broker 前必須重新確認其 GMT offset 與 DST 規則。
+- Session / cutoff / Friday exit 的小時數均為 **broker server time**；目前研究假設為夏令 GMT+3、冬令 GMT+2，但仍需用 terminal / broker specification 確認。DST 切換週 London/NY overlap 會位移 1 小時，回測跨多年時需注意 session 統計被位移污染。換 broker 前必須重新確認其 GMT offset 與 DST 規則。
 - 反向訊號仍可先平掉反向倉，但若當下不允許新倉，不會反手開新方向。
 
 ### 5.4 M15 短線候選：MaxHolding + Session
@@ -462,7 +462,7 @@ USDJPY delay stress：
 - 0.01 lot 無法完整驗證 partial close；partial close 功能測試應另用 0.03 lot 短期間 smoke test。
 - USDJPY 最佳候選仍有 2020 H2 負收益，且 2021/2023/2024 只是接近 breakeven。
 - USDJPY edge 的額外成本容忍度約 `0.283 USD/trade`，需確認 broker commission、spread 與實際 slippage。
-- Session=12–16 等時間過濾以 broker server time 為準；不同 broker 的 GMT offset 或 DST 規則不同，換 broker 時 session 對應的實際市場時段會偏移，需重新驗證。
+- Session=12–16 等時間過濾以 broker server time 為準；目前 GMT+3 / GMT+2 僅為研究假設。不同 broker 的 GMT offset 或 DST 規則不同，換 broker 時 session 對應的實際市場時段會偏移，需重新驗證。
 - 候選雖為短線，仍可能持倉跨 rollover；尚未檢查 USDJPY 多/空 swap 不對稱與 broker **週三三倍 swap 日**的持倉，需在成本評估中納入。
 
 ## 7. 下一步測試計畫
@@ -471,7 +471,7 @@ USDJPY delay stress：
 
 1. USDJPY 最佳候選進入 demo forward test：
    - 記錄實際 spread、commission、slippage、拒單、成交時間與持倉時間。
-   - 確認 demo broker 的 server time / DST，並驗證 session 12–16 對應的實際市場時段。
+   - 確認 demo broker 的 server time / DST，將目前 GMT+3 / GMT+2 假設改為已驗證設定，並驗證 session 12–16 對應的實際市場時段。
    - 記錄是否持倉跨 **週三三倍 swap 日**，並統計實際 long / short swap 不對稱。
 2. 若要正式驗證交易成本，建立 custom symbol 或使用實際 broker demo account 測 commission / execution。
 3. 對 USDJPY 做更保守成本情境：

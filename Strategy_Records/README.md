@@ -15,12 +15,12 @@
 
 ## 策略索引
 
-採用上述流程的策略研究紀錄：
+策略研究紀錄與待建立項目：
 
 | 策略 | 研究紀錄 | 目前狀態 |
 |---|---|---|
 | PrecisionSniperEA | [PrecisionSniperEA.md](PrecisionSniperEA.md) | 研究中；USDJPY M15 短線為最佳候選，待 demo forward |
-| SR Channel Breakout | 待建立（EA：`Strategies/Strategy_SR_Channel_Breakout.mq5`） | 待建立研究紀錄 |
+| SR Channel Breakout | 待建立（EA：[`Strategies/Strategy_SR_Channel_Breakout.mq5`](../Strategies/Strategy_SR_Channel_Breakout.mq5)） | 待建立研究紀錄 |
 
 每份紀錄至少包含：
 

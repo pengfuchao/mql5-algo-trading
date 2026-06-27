@@ -33,12 +33,12 @@
 
 所有 session filter、no overnight entry、Friday exit、rollover 判斷都以 **broker server time** 為準（不是台灣時間、也不是 GMT），因此每份紀錄都要標明 broker 時區與當下處於夏令或冬令。
 
-多數 MT5 broker 採美國 DST 規則：
+常見外匯 broker 可能採 EET/EEST server time（冬令 GMT+2 / 夏令 GMT+3），但不同 broker 可能不同，必須逐一確認。不要只因為 report 來自 MT5 就假設一定是 GMT+2 / GMT+3。
 
 | 期間 | Broker server time | 與台灣（GMT+8）差距 |
 |---|---|---|
-| 夏令（約 3 月至 11 月） | GMT+3 | 台灣比 server 快 5 小時 |
-| 冬令（約 11 月至 3 月） | GMT+2 | 台灣比 server 快 6 小時 |
+| 夏令假設 | GMT+3 | 台灣比 server 快 5 小時 |
+| 冬令假設 | GMT+2 | 台灣比 server 快 6 小時 |
 
 注意事項：
 
@@ -50,9 +50,10 @@
 
 ```text
 策略假說
+  -> 切分並封存 OOS 區間
   -> 指標 / EA 程式碼檢查
   -> baseline smoke test
-  -> 單一 symbol 長期間 baseline
+  -> 單一 symbol development-period baseline
   -> 年度切片檢查
   -> timeframe / HTF matrix
   -> symbol universe 篩選
@@ -131,12 +132,12 @@ baseline 是後續所有優化的參考點。
 | Optimization | 關閉 |
 | Delay | 先用接近實際 ping，例如 200ms 左右 |
 | Timeframe | 依策略假說，短線先 M15 或 H1 |
-| Date Range | 至少 3 至 6 年，若資料品質足夠可用 2020 至今 |
+| Date Range | 使用 development period，例如 2020-2023；已封存 OOS 不得用於 baseline 判斷 |
 
 資料品質要求：
 
 - Strategy Tester 的 modeling quality / history quality 要達可接受門檻（real tick 模式下盡量接近 100%），並記錄 tick data 來源與 broker。
-- **同一策略至少用 2 家 broker 的 tick data 各跑一次**。這是最便宜也最有效的 data-artifact 與過擬合偵測：若兩家結果差異巨大，通常是資料假象或對單一 broker 報價過度敏感，不是真 edge。
+- baseline / screening 階段可先用 1 家 broker 快速篩選；進入候選參數 validation 後，**同一策略至少用 2 家 broker 的 tick data 各跑一次**。這是最便宜也最有效的 data-artifact 與過擬合偵測：若兩家結果差異巨大，通常是資料假象或對單一 broker 報價過度敏感，不是真 edge。
 - 留意週末跳空、重大新聞 spike 與 tick 缺漏對 real-tick 回測的影響。
 
 baseline 階段不要急著調參數。先回答：
@@ -153,8 +154,8 @@ baseline 階段不要急著調參數。先回答：
 
 建議順序：
 
-1. 先跑全期間，例如 `2020-01-01` 至目前。
-2. 再逐年跑：2020、2021、2022、2023、2024、2025、2026 YTD。
+1. 先跑 development period 全期間，例如 `2020-01-01` 至 `2023-12-31`；不得包含已封存 OOS。
+2. 再逐年跑 development period 內的年度切片，例如 2020、2021、2022、2023。
 3. 記錄每年 Profit、Profit Factor、Expected Payoff、Sharpe、Drawdown、Trades。
 4. 標記每一年為 strong、acceptable、weak、failed。
 
@@ -415,6 +416,8 @@ MT5 tester 對 slippage 的模擬能力有限，實務上應透過：
 
 ### 12.1 Monte Carlo / bootstrap
 
+進行 Monte Carlo / DSR / PBO 前，需從 MT5 匯出 deal list / trade list 至 XLSX 或 CSV。至少保留 `entry time`、`exit time`、`symbol`、`direction`、`volume`、`profit`、`commission`、`swap`、`net profit`；若可取得，另外保留 MAE / MFE 與 entry / exit price。
+
 - **交易序列重排**：把成交序列隨機重排多次（例如 1000 次），看 Max Drawdown 與最終權益的分布，而不是只看單一回測的 Max DD。決策應使用 DD 分布的 95th percentile，而非單點值。
 - **隨機跳過交易 / bootstrap resampling**：隨機抽掉一定比例交易再重組，估出 equity curve 的信賴區間。
 - **隨機進場基準**：保留原本的出場與風控，但改用隨機進場。若隨機進場績效跟策略差不多，代表 edge 來自出場/風控而非進場訊號，原假說可能不成立。
@@ -536,7 +539,7 @@ PS-EURUSD-M15-H1-2020_2026-MS20-MHB16-S12_16-D500.html
 - Slippage assumption：
 - Swap / overnight handling：
 - Broker / Tick data 來源：
-- Server time / DST（夏令 GMT+3 / 冬令 GMT+2）：
+- Server time / DST（待確認或已確認；若採 GMT+3 / GMT+2 僅能標為假設）：
 - 累計試驗次數：
 
 ### 核心 inputs
@@ -588,17 +591,18 @@ InputC =
 2. 先切走並封存 OOS 區段，後續 screening / 優化不得使用。
 3. 檢查 indicator buffer 與 EA execution safety。
 4. 跑 1 至 3 個月 smoke test。
-5. 跑一個主要 symbol 的 2020 至今 baseline（至少 2 家 broker tick data）。
+5. 跑一個主要 symbol 的 development-period baseline；不要使用已封存 OOS。
 6. 做年度切片。
 7. 測 M15、M15+H1、H1、H1+H4；H4 只作 benchmark。
 8. 固定 inputs 跑 major FX symbol screening。
 9. 選 1 至 3 個候選 symbol 做參數粗優化。
 10. 對候選參數做年度、OOS、walk-forward。
 11. 做 spread、delay、commission、slippage、swap stress test。
-12. 做 Monte Carlo、DSR、PBO 統計穩健性檢驗。
-13. 測 fixed lot 放大與 risk-based sizing，並評估 portfolio 相關性。
-14. 做 demo forward test，收集真實 spread、slippage、execution retcode；設定最短時長與 live-vs-backtest 偏離容忍門檻。
-15. 最後才決定是否成為 production candidate。
+12. 用第 2 家 broker tick data 驗證候選參數，檢查是否對單一 broker 報價過度敏感。
+13. 做 Monte Carlo、DSR、PBO 統計穩健性檢驗。
+14. 測 fixed lot 放大與 risk-based sizing，並評估 portfolio 相關性。
+15. 做 demo forward test，收集真實 spread、slippage、execution retcode；設定最短時長與 live-vs-backtest 偏離容忍門檻。
+16. 最後才決定是否成為 production candidate。
 
 ## 18. 對短線 FX 策略的特別規則
 
