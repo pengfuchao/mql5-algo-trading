@@ -9,6 +9,10 @@
 - `PrecisionSniperEA.md`
 - `Strategy_SR_Channel_Breakout.md`
 
+共用研究流程請參考：
+
+- `MT5_Strategy_Research_Workflow.md`
+
 每份紀錄至少包含：
 
 1. 策略與版本
