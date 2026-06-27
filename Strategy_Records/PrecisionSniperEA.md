@@ -2,6 +2,8 @@
 
 最後更新：2026-06-27
 
+> 本研究日誌遵循 [MT5 Strategy Research Workflow](MT5_Strategy_Research_Workflow.md)。流程定義、OOS 封存、統計穩健性（DSR / PBO / Monte Carlo）、時區與三倍 swap 規則請參考該文件。
+
 ## 1. 策略與測試範圍
 
 - EA：`Strategies/PrecisionSniperEA.mq5`
