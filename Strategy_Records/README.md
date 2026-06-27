@@ -11,7 +11,15 @@
 
 共用研究流程請參考：
 
-- `MT5_Strategy_Research_Workflow.md`
+- [MT5_Strategy_Research_Workflow.md](MT5_Strategy_Research_Workflow.md)
+
+## 策略索引
+
+採用上述流程的策略研究紀錄：
+
+| 策略 | 研究紀錄 | 目前狀態 |
+|---|---|---|
+| PrecisionSniperEA | [PrecisionSniperEA.md](PrecisionSniperEA.md) | 研究中；USDJPY M15 短線為最佳候選，待 demo forward |
 
 每份紀錄至少包含：
 
