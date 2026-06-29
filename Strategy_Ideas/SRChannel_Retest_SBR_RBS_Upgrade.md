@@ -2,7 +2,7 @@
 
 建立日期：2026-06-29
 
-狀態：設計完成 / 待實作
+狀態：已實作 / 待編譯與回測驗證
 
 來源啟發：Malaysian SnR and Decision Levels [DoN] 的角色反轉（SBR/RBS）概念，見 [外部 SNR 想法彙整](SNR_External_Ideas_Harvest.md) §2-B。
 

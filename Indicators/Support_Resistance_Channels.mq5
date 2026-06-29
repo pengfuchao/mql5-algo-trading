@@ -10,8 +10,8 @@
 #property copyright "Pine original © LonesomeTheBlue (MPL-2.0); MQL5 port"
 #property version   "1.00"
 #property indicator_chart_window
-#property indicator_buffers 8
-#property indicator_plots   8
+#property indicator_buffers 10
+#property indicator_plots   10
 
 //--- MA1
 #property indicator_label1  "MA1"
@@ -42,6 +42,12 @@
 //--- Buffer 7: Support Bounce signal (支撐拒絕當根收盤價，否則 0)
 #property indicator_label8  "SupBounce"
 #property indicator_type8   DRAW_NONE
+//--- Buffer 8: RBS retest buy signal (回測支撐守住當根收盤價，否則 0)
+#property indicator_label9  "RetestBuy"
+#property indicator_type9   DRAW_NONE
+//--- Buffer 9: SBR retest sell signal (回測壓力守住當根收盤價，否則 0)
+#property indicator_label10 "RetestSell"
+#property indicator_type10  DRAW_NONE
 
 //+------------------------------------------------------------------+
 //| Inputs                                                           |
@@ -71,6 +77,8 @@ input double          ATRMult        = 0.3;            // ATR Multiplier for cha
 input bool            UseVolumeFilter= false;          // Confirm breakouts by relative tick volume
 input int             VolMaLen       = 20;             // Tick volume MA length
 input double          VolMult        = 1.0;            // Tick volume multiplier
+input double          RetestTolerATR = 0.10;           // Retest tolerance = ATR multiplier
+input int             RetestExpiryBars = 20;           // Retest flip expiry bars
 
 input group "Colors"
 input color           ResColor       = clrTomato;      // Resistance color (price below channel)
@@ -81,6 +89,7 @@ input group "Extras"
 input bool            ShowPivot      = false;          // Show Pivot Points
 input bool            ShowBroken     = false;          // Show Broken Support/Resistance
 input bool            ShowBounce     = false;          // Show Bounce Support/Resistance
+input bool            ShowRetest     = false;          // Show SBR/RBS Retest
 input bool            AlertsOn       = false;          // Enable S/R alerts
 
 input group "Moving Average 1"
@@ -104,6 +113,8 @@ double  bufNearRes[];  // Buffer 4: 最近壓力位
 double  bufNearSup[];  // Buffer 5: 最近支撐位
 double  bufResBounce[];// Buffer 6: 壓力拒絕反彈訊號
 double  bufSupBounce[];// Buffer 7: 支撐拒絕反彈訊號
+double  bufRetestBuy[];// Buffer 8: RBS 回測做多訊號
+double  bufRetestSell[];// Buffer 9: SBR 回測做空訊號
 
 double  SR[20];        // 已選出的通道 (top,bottom) 配對，最多 10 條
 double  SRStren[10];   // 對應通道強度
@@ -114,14 +125,26 @@ int     handleATR = INVALID_HANDLE;
 
 datetime g_lastBar = 0;
 
+struct FlipLevel
+  {
+   double price;
+   int    dir;      // +1 = RBS 看多；-1 = SBR 看空
+   int    age;
+   bool   active;
+  };
+
+const int MAX_FLIP_LEVELS = 16;
+FlipLevel g_flips[];
+
 const string PFX    = "SRchan_";       // 通道矩形物件前綴
 const string PFXPP  = "SRchan_pp_";    // 樞紐點標籤前綴
 const string PFXBK  = "SRchan_brk_";   // 突破標記前綴
 const string PFXBO  = "SRchan_bnc_";   // 反彈標記前綴
+const string PFXRT  = "SRchan_rt_";    // 回測標記前綴
 
 //--- 經輸入驗證後的有效參數
-int g_prd, g_chw, g_minstr, g_maxsr, g_loopback, g_atrlen, g_vollen;
-double g_atrmult, g_volmult;
+int g_prd, g_chw, g_minstr, g_maxsr, g_loopback, g_atrlen, g_vollen, g_rexp;
+double g_atrmult, g_volmult, g_rtol;
 
 //+------------------------------------------------------------------+
 //| 初始化                                                           |
@@ -138,6 +161,8 @@ int OnInit()
    g_atrmult  = MathMax(0.01,     ATRMult);   // 下限 0.01：避免 cwidth=0 使通道退化成單點
    g_vollen   = (int)MathMax(1,   VolMaLen);
    g_volmult  = MathMax(0.0,      VolMult);    // 0 等同只擋零量棒，無害，保留
+   g_rtol     = MathMax(0.0,      RetestTolerATR);
+   g_rexp     = (int)MathMax(1,   RetestExpiryBars);
 
    SetIndexBuffer(0, bufMA1,     INDICATOR_DATA);
    SetIndexBuffer(1, bufMA2,     INDICATOR_DATA);
@@ -147,6 +172,8 @@ int OnInit()
    SetIndexBuffer(5, bufNearSup, INDICATOR_DATA);
    SetIndexBuffer(6, bufResBounce, INDICATOR_DATA);
    SetIndexBuffer(7, bufSupBounce, INDICATOR_DATA);
+   SetIndexBuffer(8, bufRetestBuy, INDICATOR_DATA);
+   SetIndexBuffer(9, bufRetestSell, INDICATOR_DATA);
    PlotIndexSetDouble(0, PLOT_EMPTY_VALUE, EMPTY_VALUE);
    PlotIndexSetDouble(1, PLOT_EMPTY_VALUE, EMPTY_VALUE);
    ArraySetAsSeries(bufMA1,     true);
@@ -157,6 +184,8 @@ int OnInit()
    ArraySetAsSeries(bufNearSup, true);
    ArraySetAsSeries(bufResBounce, true);
    ArraySetAsSeries(bufSupBounce, true);
+   ArraySetAsSeries(bufRetestBuy, true);
+   ArraySetAsSeries(bufRetestSell, true);
 
 //--- 建立 MA handle (只在啟用時建立)
    if(MA1On)
@@ -171,15 +200,15 @@ int OnInit()
       if(handleMA2 == INVALID_HANDLE)
          Print("SRchannel: 建立 MA2 handle 失敗, error=", GetLastError());
      }
-   if(ChannelWidthMode == WIDTH_ATR)
-     {
-      handleATR = iATR(_Symbol, _Period, g_atrlen);
-      if(handleATR == INVALID_HANDLE)
-         Print("SRchannel: 建立 ATR handle 失敗, error=", GetLastError());
-     }
+   // ATR 同時供 ATR-width 與 retest tolerance 使用；預設 Range% 仍不改通道幾何。
+   handleATR = iATR(_Symbol, _Period, g_atrlen);
+   if(handleATR == INVALID_HANDLE)
+      Print("SRchannel: 建立 ATR handle 失敗, error=", GetLastError());
 
    ArrayInitialize(SR, 0.0);
    ArrayInitialize(SRStren, 0.0);
+   ArrayResize(g_flips, MAX_FLIP_LEVELS);
+   ClearFlipLevels();
    g_lastBar = 0;
 
    IndicatorSetString(INDICATOR_SHORTNAME, "SRchannel(" + IntegerToString(g_prd) + ")");
@@ -243,6 +272,9 @@ int OnCalculate(const int rates_total,
       ArrayInitialize(bufNearSup, 0.0);
       ArrayInitialize(bufResBounce, 0.0);
       ArrayInitialize(bufSupBounce, 0.0);
+      ArrayInitialize(bufRetestBuy, 0.0);
+      ArrayInitialize(bufRetestSell, 0.0);
+      ClearFlipLevels();
      }
    if(firstRun || newBar)
      {
@@ -596,6 +628,128 @@ void DrawPivotLabel(const datetime t, const double price, const bool isHigh)
   }
 
 //+------------------------------------------------------------------+
+//| 清空 SBR/RBS 翻轉位狀態                                          |
+//+------------------------------------------------------------------+
+void ClearFlipLevels()
+  {
+   for(int i = 0; i < ArraySize(g_flips); i++)
+     {
+      g_flips[i].price  = 0.0;
+      g_flips[i].dir    = 0;
+      g_flips[i].age    = 0;
+      g_flips[i].active = false;
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| 讀取已收盤 ATR，用於 retest 容差                                 |
+//+------------------------------------------------------------------+
+bool ReadClosedATR(double &atr)
+  {
+   atr = 0.0;
+   if(handleATR == INVALID_HANDLE || BarsCalculated(handleATR) <= 1)
+      return false;
+
+   double atrVal[1];
+   if(CopyBuffer(handleATR, 0, 1, 1, atrVal) <= 0 || atrVal[0] <= 0.0)
+      return false;
+
+   atr = atrVal[0];
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| 登記突破後的角色反轉位                                           |
+//+------------------------------------------------------------------+
+void RegisterFlipLevel(const double price, const int dir, const double duplicateTol)
+  {
+   double tol = MathMax(duplicateTol, _Point);
+   for(int i = 0; i < ArraySize(g_flips); i++)
+     {
+      if(!g_flips[i].active) continue;
+      if(g_flips[i].dir == dir && MathAbs(g_flips[i].price - price) <= tol)
+         return;
+     }
+
+   int slot = -1;
+   int oldest = -1;
+   int oldestAge = -1;
+   for(int i = 0; i < ArraySize(g_flips); i++)
+     {
+      if(!g_flips[i].active)
+        {
+         slot = i;
+         break;
+        }
+      if(g_flips[i].age > oldestAge)
+        {
+         oldestAge = g_flips[i].age;
+         oldest = i;
+        }
+     }
+   if(slot < 0)
+      slot = oldest;
+   if(slot < 0)
+      return;
+
+   g_flips[slot].price  = price;
+   g_flips[slot].dir    = dir;
+   g_flips[slot].age    = 0;
+   g_flips[slot].active = true;
+  }
+
+//+------------------------------------------------------------------+
+//| 偵測既有翻轉位是否完成回測或失效                                 |
+//+------------------------------------------------------------------+
+void ProcessRetests(const double high1,
+                    const double low1,
+                    const double close1,
+                    const double tol,
+                    bool &retestBuy,
+                    bool &retestSell)
+  {
+   for(int i = 0; i < ArraySize(g_flips); i++)
+     {
+      if(!g_flips[i].active)
+         continue;
+
+      double price = g_flips[i].price;
+      if(g_flips[i].dir > 0)
+        {
+         if(close1 < price - tol)
+           {
+            g_flips[i].active = false;
+            continue;
+           }
+         if(low1 <= price + tol && close1 > price)
+           {
+            retestBuy = true;
+            g_flips[i].active = false;
+            continue;
+           }
+        }
+      else if(g_flips[i].dir < 0)
+        {
+         if(close1 > price + tol)
+           {
+            g_flips[i].active = false;
+            continue;
+           }
+         if(high1 >= price - tol && close1 < price)
+           {
+            retestSell = true;
+            g_flips[i].active = false;
+            continue;
+           }
+        }
+
+      g_flips[i].age++;
+      if(g_flips[i].age > g_rexp)
+         g_flips[i].active = false;
+     }
+  }
+
+//+------------------------------------------------------------------+
 //| 更新訊號 buffer 與突破/反彈標記 (以「已收盤」K 棒 shift=1 為基準) |
 //|   - 突破判定使用 close[1] 相對 close[2]，寫入 buffer index 1，    |
 //|     供 EA 以 shift=1 讀取已收盤狀態，避免盤中 repaint。           |
@@ -637,18 +791,48 @@ void UpdateSignals(const datetime &time[],
       if(cClosed <= top && cClosed >= bottom) { inChannel = true; break; }
      }
 
-   bool resBroken = false, supBroken = false;
+   bool rawResBroken = false, rawSupBroken = false;
+   double rawResLevels[], rawSupLevels[];
+   ArrayResize(rawResLevels, 0);
+   ArrayResize(rawSupLevels, 0);
    if(!inChannel)
      {
       for(int x = 0; x <= g_maxsr; x++)
         {
          double top = SR[x * 2], bottom = SR[x * 2 + 1];
          if(top == 0.0 && bottom == 0.0) continue;
-         if(cPrev <= top && cClosed > top)        resBroken = true; // 向上突破壓力
-         if(cPrev >= bottom && cClosed < bottom)  supBroken = true; // 向下跌破支撐
+         if(cPrev <= top && cClosed > top)
+           {
+            rawResBroken = true; // 向上突破壓力
+            int n = ArraySize(rawResLevels);
+            ArrayResize(rawResLevels, n + 1);
+            rawResLevels[n] = top;
+           }
+         if(cPrev >= bottom && cClosed < bottom)
+           {
+            rawSupBroken = true; // 向下跌破支撐
+            int n = ArraySize(rawSupLevels);
+            ArrayResize(rawSupLevels, n + 1);
+            rawSupLevels[n] = bottom;
+           }
         }
      }
 
+   bool retestBuy = false, retestSell = false;
+   double atr1 = 0.0;
+   bool atrReady = ReadClosedATR(atr1);
+   double retestTol = (atrReady ? g_rtol * atr1 : MathMax(_Point, 0.0));
+   if(atrReady)
+      ProcessRetests(high[1], low[1], cClosed, retestTol, retestBuy, retestSell);
+
+   // 新突破位只登記、不在同一根突破棒觸發 retest，避免 retest 退化成裸突破。
+   double duplicateTol = MathMax(retestTol, _Point);
+   for(int i = 0; i < ArraySize(rawResLevels); i++)
+      RegisterFlipLevel(rawResLevels[i], +1, duplicateTol);
+   for(int i = 0; i < ArraySize(rawSupLevels); i++)
+      RegisterFlipLevel(rawSupLevels[i], -1, duplicateTol);
+
+   bool resBroken = rawResBroken, supBroken = rawSupBroken;
    if(UseVolumeFilter && (resBroken || supBroken) && rates_total > g_vollen + 1)
      {
       double volSum = 0.0;
@@ -685,12 +869,16 @@ void UpdateSignals(const datetime &time[],
    bufNearSup[1]    = nearSup;
    bufResBounce[1]  = resBounce ? cClosed : 0.0;
    bufSupBounce[1]  = supBounce ? cClosed : 0.0;
+   bufRetestBuy[1]  = retestBuy ? cClosed : 0.0;
+   bufRetestSell[1] = retestSell ? cClosed : 0.0;
    bufResBrk[0]     = 0.0;
    bufSupBrk[0]     = 0.0;
    bufNearRes[0]    = nearRes;
    bufNearSup[0]    = nearSup;
    bufResBounce[0]  = 0.0;
    bufSupBounce[0]  = 0.0;
+   bufRetestBuy[0]  = 0.0;
+   bufRetestSell[0] = 0.0;
 
 //--- 圖表標記與提示 (置於已收盤棒)
    if(ShowBroken && resBroken)
@@ -701,6 +889,10 @@ void UpdateSignals(const datetime &time[],
       DrawBounceMarker(time[1], high[1], true);
    if(ShowBounce && supBounce)
       DrawBounceMarker(time[1], low[1], false);
+   if(ShowRetest && retestBuy)
+      DrawRetestMarker(time[1], cClosed, true);
+   if(ShowRetest && retestSell)
+      DrawRetestMarker(time[1], cClosed, false);
 
    if(AlertsOn && resBroken)
       Alert(_Symbol, " ", EnumToString(_Period), " SRchannel: Resistance Broken");
@@ -743,6 +935,24 @@ void DrawBounceMarker(const datetime t, const double price, const bool resistanc
    ObjectSetInteger(0, nm, OBJPROP_ARROWCODE, resistance ? 242 : 241);
    ObjectSetInteger(0, nm, OBJPROP_COLOR, resistance ? ResColor : SupColor);
    ObjectSetInteger(0, nm, OBJPROP_ANCHOR, resistance ? ANCHOR_BOTTOM : ANCHOR_TOP);
+   ObjectSetInteger(0, nm, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+  }
+
+//+------------------------------------------------------------------+
+//| 建立 SBR/RBS 回測標記箭頭                                        |
+//+------------------------------------------------------------------+
+void DrawRetestMarker(const datetime t, const double price, const bool buySignal)
+  {
+   string nm = PFXRT + (buySignal ? "buy_" : "sell_") + (string)(long)t;
+   if(ObjectFind(0, nm) >= 0)
+      return;
+   // RBS 回測守住 → 向上箭頭；SBR 回測守住 → 向下箭頭。
+   ObjectCreate(0, nm, OBJ_ARROW, 0, t, price);
+   ObjectSetInteger(0, nm, OBJPROP_ARROWCODE, buySignal ? 241 : 242);
+   ObjectSetInteger(0, nm, OBJPROP_COLOR, buySignal ? SupColor : ResColor);
+   ObjectSetInteger(0, nm, OBJPROP_ANCHOR, buySignal ? ANCHOR_TOP : ANCHOR_BOTTOM);
    ObjectSetInteger(0, nm, OBJPROP_WIDTH, 1);
    ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);

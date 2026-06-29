@@ -72,7 +72,8 @@ enum ENUM_SR_SIGNAL_MODE
   {
    SIG_BREAKOUT = 0,   // Breakout only
    SIG_BOUNCE   = 1,   // Bounce/rejection only
-   SIG_BOTH     = 2    // Breakout + bounce
+   SIG_BOTH     = 2,   // Breakout + bounce
+   SIG_RETEST   = 3    // SBR/RBS retest only
   };
 
 //=== 指標參數 (順序必須與 Support_Resistance_Channels.mq5 的 input 宣告一致) ===
@@ -90,6 +91,8 @@ input double          InpATRMult        = 0.3;           // ATR Multiplier for c
 input bool            InpUseVolumeFilter= false;         // Confirm breakouts by relative tick volume
 input int             InpVolMaLen       = 20;            // Tick volume MA length
 input double          InpVolMult        = 1.0;           // Tick volume multiplier
+input double          InpRetestTolerATR = 0.10;          // Retest tolerance = ATR multiplier
+input int             InpRetestExpiryBars = 20;          // Retest flip expiry bars
 
 input group "Signal"
 input ENUM_SR_SIGNAL_MODE InpSignalMode = SIG_BREAKOUT;  // Signal mode
@@ -339,6 +342,10 @@ int OnInit()
      { Print("InpVolMaLen 必須 >= 1 (量過濾啟用時)");        return(INIT_PARAMETERS_INCORRECT); }
    if(InpUseVolumeFilter && InpVolMult < 0.0)
      { Print("InpVolMult 不可為負 (量過濾啟用時)");          return(INIT_PARAMETERS_INCORRECT); }
+   if(InpSignalMode == SIG_RETEST && InpRetestTolerATR <= 0.0)
+     { Print("InpRetestTolerATR 必須 > 0 (retest 模式)");     return(INIT_PARAMETERS_INCORRECT); }
+   if(InpSignalMode == SIG_RETEST && InpRetestExpiryBars < 1)
+     { Print("InpRetestExpiryBars 必須 >= 1 (retest 模式)");  return(INIT_PARAMETERS_INCORRECT); }
 
    trade.SetExpertMagicNumber(InpMagic);
    trade.SetDeviationInPoints(InpDeviation);
@@ -348,7 +355,8 @@ int OnInit()
                       InpPivotPeriod, InpSourceMode, InpChannelWidthPct,
                       InpMinStrength, InpMaxNumSR, InpLoopback,
                       InpChannelWidthMode, InpATRLen, InpATRMult,
-                      InpUseVolumeFilter, InpVolMaLen, InpVolMult);
+                      InpUseVolumeFilter, InpVolMaLen, InpVolMult,
+                      InpRetestTolerATR, InpRetestExpiryBars);
    if(srHandle == INVALID_HANDLE)
      {
       PrintFormat("無法載入指標 '%s' (請確認已編譯且路徑正確), error=%d",
@@ -398,14 +406,18 @@ void OnTick()
 
    bool useBreakout = (InpSignalMode == SIG_BREAKOUT || InpSignalMode == SIG_BOTH);
    bool useBounce   = (InpSignalMode == SIG_BOUNCE   || InpSignalMode == SIG_BOTH);
+   bool useRetest   = (InpSignalMode == SIG_RETEST);
 
    double resArr[1] = {0.0}, supArr[1] = {0.0};
    double resBounceArr[1] = {0.0}, supBounceArr[1] = {0.0};
+   double retestBuyArr[1] = {0.0}, retestSellArr[1] = {0.0};
    double atrArr[1];
    if(useBreakout && CopyBuffer(srHandle, 2, 1, 1, resArr) < 1) return;      // shift=1 已收盤棒
    if(useBreakout && CopyBuffer(srHandle, 3, 1, 1, supArr) < 1) return;
    if(useBounce && CopyBuffer(srHandle, 6, 1, 1, resBounceArr) < 1) return;
    if(useBounce && CopyBuffer(srHandle, 7, 1, 1, supBounceArr) < 1) return;
+   if(useRetest && CopyBuffer(srHandle, 8, 1, 1, retestBuyArr) < 1) return;
+   if(useRetest && CopyBuffer(srHandle, 9, 1, 1, retestSellArr) < 1) return;
    if(CopyBuffer(atrHandle, 0, 1, 1, atrArr) < 1) return;
 
    // 資料齊全 → 本根 K 棒標記為已處理 (即使無訊號或最終不下單，亦不於同根重評估)
@@ -415,8 +427,10 @@ void OnTick()
    bool breakoutSell = (supArr[0] > 0.0);         // 支撐向下跌破 → 做空
    bool bounceBuy    = (supBounceArr[0] > 0.0);   // 支撐拒絕 → 做多
    bool bounceSell   = (resBounceArr[0] > 0.0);   // 壓力拒絕 → 做空
-   bool buySig       = (useBreakout && breakoutBuy)  || (useBounce && bounceBuy);
-   bool sellSig      = (useBreakout && breakoutSell) || (useBounce && bounceSell);
+   bool retestBuy    = (retestBuyArr[0] > 0.0);    // RBS 回測守住 → 做多
+   bool retestSell   = (retestSellArr[0] > 0.0);   // SBR 回測守住 → 做空
+   bool buySig       = (useBreakout && breakoutBuy)  || (useBounce && bounceBuy)  || (useRetest && retestBuy);
+   bool sellSig      = (useBreakout && breakoutSell) || (useBounce && bounceSell) || (useRetest && retestSell);
    if(!buySig && !sellSig) return;
    if(buySig && sellSig)   return;     // 同棒同時觸發 (罕見)，視為不明確不交易
    bool isBuy = buySig;
@@ -425,11 +439,13 @@ void OnTick()
      {
       if((useBreakout && breakoutBuy) && !(useBounce && bounceBuy)) signalTag = "breakout";
       if((useBounce && bounceBuy) && !(useBreakout && breakoutBuy)) signalTag = "bounce";
+      if(useRetest && retestBuy) signalTag = "retest";
      }
    else
      {
       if((useBreakout && breakoutSell) && !(useBounce && bounceSell)) signalTag = "breakout";
       if((useBounce && bounceSell) && !(useBreakout && breakoutSell)) signalTag = "bounce";
+      if(useRetest && retestSell) signalTag = "retest";
      }
 
    // F/L6：方向感知交易環境檢查
