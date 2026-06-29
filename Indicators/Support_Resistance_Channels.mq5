@@ -5,13 +5,13 @@
 //|  Original Pine Script v6 © LonesomeTheBlue (MPL-2.0)             |
 //|                                                                  |
 //|  以樞紐點 (Pivot) 分群建立支撐/壓力「通道」，依強度挑選最強的      |
-//|  數條通道並以矩形繪製；價格突破通道時可標記並提示。               |
+//|  數條通道並以矩形繪製；價格突破或影線拒絕通道時可標記並提示。     |
 //+------------------------------------------------------------------+
 #property copyright "Pine original © LonesomeTheBlue (MPL-2.0); MQL5 port"
 #property version   "1.00"
 #property indicator_chart_window
-#property indicator_buffers 6
-#property indicator_plots   6
+#property indicator_buffers 8
+#property indicator_plots   8
 
 //--- MA1
 #property indicator_label1  "MA1"
@@ -36,6 +36,12 @@
 //--- Buffer 5: 現價下方最近通道上緣 (最近支撐位，否則 0)
 #property indicator_label6  "NearestSup"
 #property indicator_type6   DRAW_NONE
+//--- Buffer 6: Resistance Bounce signal (壓力拒絕當根收盤價，否則 0)
+#property indicator_label7  "ResBounce"
+#property indicator_type7   DRAW_NONE
+//--- Buffer 7: Support Bounce signal (支撐拒絕當根收盤價，否則 0)
+#property indicator_label8  "SupBounce"
+#property indicator_type8   DRAW_NONE
 
 //+------------------------------------------------------------------+
 //| Inputs                                                           |
@@ -62,7 +68,8 @@ input color           InChColor      = clrGray;        // Color when price in ch
 input group "Extras"
 input bool            ShowPivot      = false;          // Show Pivot Points
 input bool            ShowBroken     = false;          // Show Broken Support/Resistance
-input bool            AlertsOn       = false;          // Enable broken S/R alerts
+input bool            ShowBounce     = false;          // Show Bounce Support/Resistance
+input bool            AlertsOn       = false;          // Enable S/R alerts
 
 input group "Moving Average 1"
 input bool            MA1On          = false;          // MA 1 enable
@@ -83,6 +90,8 @@ double  bufResBrk[];   // Buffer 2: 壓力突破訊號
 double  bufSupBrk[];   // Buffer 3: 支撐跌破訊號
 double  bufNearRes[];  // Buffer 4: 最近壓力位
 double  bufNearSup[];  // Buffer 5: 最近支撐位
+double  bufResBounce[];// Buffer 6: 壓力拒絕反彈訊號
+double  bufSupBounce[];// Buffer 7: 支撐拒絕反彈訊號
 
 double  SR[20];        // 已選出的通道 (top,bottom) 配對，最多 10 條
 double  SRStren[10];   // 對應通道強度
@@ -95,6 +104,7 @@ datetime g_lastBar = 0;
 const string PFX    = "SRchan_";       // 通道矩形物件前綴
 const string PFXPP  = "SRchan_pp_";    // 樞紐點標籤前綴
 const string PFXBK  = "SRchan_brk_";   // 突破標記前綴
+const string PFXBO  = "SRchan_bnc_";   // 反彈標記前綴
 
 //--- 經輸入驗證後的有效參數
 int g_prd, g_chw, g_minstr, g_maxsr, g_loopback;
@@ -117,6 +127,8 @@ int OnInit()
    SetIndexBuffer(3, bufSupBrk,  INDICATOR_DATA);
    SetIndexBuffer(4, bufNearRes, INDICATOR_DATA);
    SetIndexBuffer(5, bufNearSup, INDICATOR_DATA);
+   SetIndexBuffer(6, bufResBounce, INDICATOR_DATA);
+   SetIndexBuffer(7, bufSupBounce, INDICATOR_DATA);
    PlotIndexSetDouble(0, PLOT_EMPTY_VALUE, EMPTY_VALUE);
    PlotIndexSetDouble(1, PLOT_EMPTY_VALUE, EMPTY_VALUE);
    ArraySetAsSeries(bufMA1,     true);
@@ -125,6 +137,8 @@ int OnInit()
    ArraySetAsSeries(bufSupBrk,  true);
    ArraySetAsSeries(bufNearRes, true);
    ArraySetAsSeries(bufNearSup, true);
+   ArraySetAsSeries(bufResBounce, true);
+   ArraySetAsSeries(bufSupBounce, true);
 
 //--- 建立 MA handle (只在啟用時建立)
    if(MA1On)
@@ -201,13 +215,15 @@ int OnCalculate(const int rates_total,
       ArrayInitialize(bufSupBrk,  0.0);
       ArrayInitialize(bufNearRes, 0.0);
       ArrayInitialize(bufNearSup, 0.0);
+      ArrayInitialize(bufResBounce, 0.0);
+      ArrayInitialize(bufSupBounce, 0.0);
      }
    if(firstRun || newBar)
      {
       ComputeSR(time, open, high, low, close, rates_total);
       RedrawChannels(time, close, rates_total);
       RedrawPivots(time, rates_total);
-      UpdateSignals(time, close, rates_total);
+      UpdateSignals(time, high, low, close, rates_total);
       g_lastBar = time[0];
       ChartRedraw();
      }
@@ -537,7 +553,11 @@ void DrawPivotLabel(const datetime t, const double price, const bool isHigh)
 //|     供 EA 以 shift=1 讀取已收盤狀態，避免盤中 repaint。           |
 //|   - 最近壓力/支撐位同樣寫於 index 1。                             |
 //+------------------------------------------------------------------+
-void UpdateSignals(const datetime &time[], const double &close[], const int rates_total)
+void UpdateSignals(const datetime &time[],
+                   const double &high[],
+                   const double &low[],
+                   const double &close[],
+                   const int rates_total)
   {
    if(rates_total < 3)
       return;
@@ -578,26 +598,53 @@ void UpdateSignals(const datetime &time[], const double &close[], const int rate
         }
      }
 
+   bool resBounce = false, supBounce = false;
+   for(int x = 0; x <= g_maxsr; x++)
+     {
+      double top = SR[x * 2], bottom = SR[x * 2 + 1];
+      if(top == 0.0 && bottom == 0.0) continue;
+
+      // 壓力拒絕：上一根收在通道下方，本根影線觸及/穿入壓力通道，收盤仍回到通道下方。
+      if(cPrev < bottom && high[1] >= bottom && cClosed < bottom)
+         resBounce = true;
+
+      // 支撐拒絕：上一根收在通道上方，本根影線觸及/穿入支撐通道，收盤仍回到通道上方。
+      if(cPrev > top && low[1] <= top && cClosed > top)
+         supBounce = true;
+     }
+
 //--- 寫入 EA 讀取用 buffer (index 1 = 已收盤棒；index 0 = 形成中棒，突破暫為 0)
-   bufResBrk[1]  = resBroken ? cClosed : 0.0;
-   bufSupBrk[1]  = supBroken ? cClosed : 0.0;
-   bufNearRes[1] = nearRes;
-   bufNearSup[1] = nearSup;
-   bufResBrk[0]  = 0.0;
-   bufSupBrk[0]  = 0.0;
-   bufNearRes[0] = nearRes;
-   bufNearSup[0] = nearSup;
+   bufResBrk[1]     = resBroken ? cClosed : 0.0;
+   bufSupBrk[1]     = supBroken ? cClosed : 0.0;
+   bufNearRes[1]    = nearRes;
+   bufNearSup[1]    = nearSup;
+   bufResBounce[1]  = resBounce ? cClosed : 0.0;
+   bufSupBounce[1]  = supBounce ? cClosed : 0.0;
+   bufResBrk[0]     = 0.0;
+   bufSupBrk[0]     = 0.0;
+   bufNearRes[0]    = nearRes;
+   bufNearSup[0]    = nearSup;
+   bufResBounce[0]  = 0.0;
+   bufSupBounce[0]  = 0.0;
 
 //--- 圖表標記與提示 (置於已收盤棒)
    if(ShowBroken && resBroken)
       DrawBrokenMarker(time[1], cClosed, true);
    if(ShowBroken && supBroken)
       DrawBrokenMarker(time[1], cClosed, false);
+   if(ShowBounce && resBounce)
+      DrawBounceMarker(time[1], high[1], true);
+   if(ShowBounce && supBounce)
+      DrawBounceMarker(time[1], low[1], false);
 
    if(AlertsOn && resBroken)
       Alert(_Symbol, " ", EnumToString(_Period), " SRchannel: Resistance Broken");
    if(AlertsOn && supBroken)
       Alert(_Symbol, " ", EnumToString(_Period), " SRchannel: Support Broken");
+   if(AlertsOn && resBounce)
+      Alert(_Symbol, " ", EnumToString(_Period), " SRchannel: Resistance Bounce");
+   if(AlertsOn && supBounce)
+      Alert(_Symbol, " ", EnumToString(_Period), " SRchannel: Support Bounce");
   }
 
 //+------------------------------------------------------------------+
@@ -613,6 +660,24 @@ void DrawBrokenMarker(const datetime t, const double price, const bool resistanc
    ObjectSetInteger(0, nm, OBJPROP_ARROWCODE, resistance ? 241 : 242);
    ObjectSetInteger(0, nm, OBJPROP_COLOR, resistance ? SupColor : ResColor);
    ObjectSetInteger(0, nm, OBJPROP_ANCHOR, resistance ? ANCHOR_TOP : ANCHOR_BOTTOM);
+   ObjectSetInteger(0, nm, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+  }
+
+//+------------------------------------------------------------------+
+//| 建立反彈標記箭頭                                                 |
+//+------------------------------------------------------------------+
+void DrawBounceMarker(const datetime t, const double price, const bool resistance)
+  {
+   string nm = PFXBO + (resistance ? "res_" : "sup_") + (string)(long)t;
+   if(ObjectFind(0, nm) >= 0)
+      return;
+   // 壓力拒絕 → 向下箭頭；支撐拒絕 → 向上箭頭，標在觸及的影線附近。
+   ObjectCreate(0, nm, OBJ_ARROW, 0, t, price);
+   ObjectSetInteger(0, nm, OBJPROP_ARROWCODE, resistance ? 242 : 241);
+   ObjectSetInteger(0, nm, OBJPROP_COLOR, resistance ? ResColor : SupColor);
+   ObjectSetInteger(0, nm, OBJPROP_ANCHOR, resistance ? ANCHOR_BOTTOM : ANCHOR_TOP);
    ObjectSetInteger(0, nm, OBJPROP_WIDTH, 1);
    ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);

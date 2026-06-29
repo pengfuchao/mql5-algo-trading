@@ -1,9 +1,9 @@
 //+------------------------------------------------------------------+
 //|                              Strategy_SR_Channel_Breakout.mq5    |
 //|                                                                  |
-//|  對接 Indicators/Support_Resistance_Channels.mq5 的突破 EA。      |
-//|  讀取指標的 Resistance/Support Broken 訊號 buffer (已收盤棒)，    |
-//|  以順勢突破方向進場，ATR 止損 + RR 止盈，風險% 動態手數。         |
+//|  對接 Indicators/Support_Resistance_Channels.mq5 的 S/R EA。       |
+//|  讀取指標的 Breakout / Bounce 訊號 buffer (已收盤棒)，             |
+//|  支援順勢突破、支撐/壓力反彈或兩者混合，ATR 止損 + RR 止盈。       |
 //+------------------------------------------------------------------+
 //
 // 已知限制與未來優化方向（2026-06-25 review）
@@ -62,6 +62,13 @@ enum ENUM_SR_SOURCE
    SRC_CLOSEOPEN = 1  // Close/Open
   };
 
+enum ENUM_SR_SIGNAL_MODE
+  {
+   SIG_BREAKOUT = 0,   // Breakout only
+   SIG_BOUNCE   = 1,   // Bounce/rejection only
+   SIG_BOTH     = 2    // Breakout + bounce
+  };
+
 //=== 指標參數 (順序必須與 Support_Resistance_Channels.mq5 的 input 宣告一致) ===
 input group "S/R Indicator"
 input string          InpIndicatorName  = "Support_Resistance_Channels"; // iCustom 路徑 (相對 MQL5\Indicators)
@@ -71,6 +78,9 @@ input int             InpChannelWidthPct= 5;             // Max Channel Width %
 input int             InpMinStrength    = 1;             // Minimum Strength
 input int             InpMaxNumSR       = 6;             // Maximum Number of S/R
 input int             InpLoopback       = 290;           // Loopback Period
+
+input group "Signal"
+input ENUM_SR_SIGNAL_MODE InpSignalMode = SIG_BREAKOUT;  // Signal mode
 
 //=== 交易設定 ===
 input group "Trade"
@@ -363,19 +373,41 @@ void OnTick()
    // 指標/ATR 計算就緒檢查 (暫時失敗 → 不標記已處理)
    if(BarsCalculated(srHandle) < 2 || BarsCalculated(atrHandle) < 2) return;
 
-   double resArr[1], supArr[1], atrArr[1];
-   if(CopyBuffer(srHandle, 2, 1, 1, resArr) < 1) return;   // shift=1 已收盤棒
-   if(CopyBuffer(srHandle, 3, 1, 1, supArr) < 1) return;
+   bool useBreakout = (InpSignalMode == SIG_BREAKOUT || InpSignalMode == SIG_BOTH);
+   bool useBounce   = (InpSignalMode == SIG_BOUNCE   || InpSignalMode == SIG_BOTH);
+
+   double resArr[1] = {0.0}, supArr[1] = {0.0};
+   double resBounceArr[1] = {0.0}, supBounceArr[1] = {0.0};
+   double atrArr[1];
+   if(useBreakout && CopyBuffer(srHandle, 2, 1, 1, resArr) < 1) return;      // shift=1 已收盤棒
+   if(useBreakout && CopyBuffer(srHandle, 3, 1, 1, supArr) < 1) return;
+   if(useBounce && CopyBuffer(srHandle, 6, 1, 1, resBounceArr) < 1) return;
+   if(useBounce && CopyBuffer(srHandle, 7, 1, 1, supBounceArr) < 1) return;
    if(CopyBuffer(atrHandle, 0, 1, 1, atrArr) < 1) return;
 
    // 資料齊全 → 本根 K 棒標記為已處理 (即使無訊號或最終不下單，亦不於同根重評估)
    lastBar = curBar[0];
 
-   bool buySig  = (resArr[0] > 0.0);   // 壓力向上突破 → 做多
-   bool sellSig = (supArr[0] > 0.0);   // 支撐向下跌破 → 做空
+   bool breakoutBuy  = (resArr[0] > 0.0);         // 壓力向上突破 → 做多
+   bool breakoutSell = (supArr[0] > 0.0);         // 支撐向下跌破 → 做空
+   bool bounceBuy    = (supBounceArr[0] > 0.0);   // 支撐拒絕 → 做多
+   bool bounceSell   = (resBounceArr[0] > 0.0);   // 壓力拒絕 → 做空
+   bool buySig       = (useBreakout && breakoutBuy)  || (useBounce && bounceBuy);
+   bool sellSig      = (useBreakout && breakoutSell) || (useBounce && bounceSell);
    if(!buySig && !sellSig) return;
    if(buySig && sellSig)   return;     // 同棒同時觸發 (罕見)，視為不明確不交易
    bool isBuy = buySig;
+   string signalTag = "mixed";
+   if(isBuy)
+     {
+      if((useBreakout && breakoutBuy) && !(useBounce && bounceBuy)) signalTag = "breakout";
+      if((useBounce && bounceBuy) && !(useBreakout && breakoutBuy)) signalTag = "bounce";
+     }
+   else
+     {
+      if((useBreakout && breakoutSell) && !(useBounce && bounceSell)) signalTag = "breakout";
+      if((useBounce && bounceSell) && !(useBreakout && breakoutSell)) signalTag = "bounce";
+     }
 
    // F/L6：方向感知交易環境檢查
    if(!CanTrade(isBuy)) { Print("目前不允許該方向交易 (mode/permission)，略過"); return; }
@@ -446,7 +478,7 @@ void OnTick()
       if(lots <= 0) return;                                         // H2/B：風險超限或資料無效 → 不交易
       if(!HasEnoughMargin(ORDER_TYPE_BUY, lots, ask)) { Print("可用保證金不足/無法計算，略過做多"); return; }
 
-      bool sent = trade.Buy(lots, _Symbol, 0.0, sl, tp, "SRchan breakout buy");
+      bool sent = trade.Buy(lots, _Symbol, 0.0, sl, tp, "SRchan " + signalTag + " buy");
       LogTradeResult("Buy", sent);
      }
    //=== 做空 ===
@@ -472,7 +504,7 @@ void OnTick()
       if(lots <= 0) return;
       if(!HasEnoughMargin(ORDER_TYPE_SELL, lots, bid)) { Print("可用保證金不足/無法計算，略過做空"); return; }
 
-      bool sent = trade.Sell(lots, _Symbol, 0.0, sl, tp, "SRchan breakout sell");
+      bool sent = trade.Sell(lots, _Symbol, 0.0, sl, tp, "SRchan " + signalTag + " sell");
       LogTradeResult("Sell", sent);
      }
   }

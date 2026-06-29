@@ -28,3 +28,4 @@
 | 策略想法 | 文件 | 狀態 |
 |---|---|---|
 | PrecisionSniper + SNR 位置過濾 | [PrecisionSniper_SNR_Filter.md](PrecisionSniper_SNR_Filter.md) | 優先研究方向 |
+| SR Channel 指標升級：新增反彈訊號 | [SRChannel_Bounce_Signal_Upgrade.md](SRChannel_Bounce_Signal_Upgrade.md) | 已實作 / 待編譯與回測驗證 |
