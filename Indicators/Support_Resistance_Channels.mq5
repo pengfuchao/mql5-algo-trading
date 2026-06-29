@@ -548,9 +548,11 @@ void DrawPivotLabel(const datetime t, const double price, const bool isHigh)
   }
 
 //+------------------------------------------------------------------+
-//| 更新訊號 buffer 與突破標記 (以「已收盤」K 棒 shift=1 為基準)      |
+//| 更新訊號 buffer 與突破/反彈標記 (以「已收盤」K 棒 shift=1 為基準) |
 //|   - 突破判定使用 close[1] 相對 close[2]，寫入 buffer index 1，    |
 //|     供 EA 以 shift=1 讀取已收盤狀態，避免盤中 repaint。           |
+//|   - 反彈判定使用 close[1]/close[2] 與 high[1]/low[1] (影線觸及後  |
+//|     收回)，分別寫入 ResBounce/SupBounce buffer index 1。          |
 //|   - 最近壓力/支撐位同樣寫於 index 1。                             |
 //+------------------------------------------------------------------+
 void UpdateSignals(const datetime &time[],
