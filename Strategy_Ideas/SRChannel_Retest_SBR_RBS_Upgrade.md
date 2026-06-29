@@ -2,7 +2,7 @@
 
 建立日期：2026-06-29
 
-狀態：已實作 / 待編譯與回測驗證
+狀態：**已驗證／否定** — 實作完成且編譯通過，但跨商品成對測試顯示 retest 在 4 商品全部 ≤ breakout（見 [Strategy_Records §S6](../Strategy_Records/Strategy_SR_Channel_Breakout.md)）。假說否定、策略結案；指標/EA 程式碼保留可用。
 
 來源啟發：Malaysian SnR and Decision Levels [DoN] 的角色反轉（SBR/RBS）概念，見 [外部 SNR 想法彙整](SNR_External_Ideas_Harvest.md) §2-B。
 

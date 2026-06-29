@@ -20,7 +20,7 @@
 | 策略 | 研究紀錄 | 目前狀態 |
 |---|---|---|
 | PrecisionSniperEA | [PrecisionSniperEA.md](PrecisionSniperEA.md) | 研究中；USDJPY M15 短線為最佳候選，待 demo forward |
-| SR Channel Breakout | [Strategy_SR_Channel_Breakout.md](Strategy_SR_Channel_Breakout.md) | 裸突破不跨商品穩健（EURUSD 強、GBP/AUD 弱）；轉向 Phase 2 回測進場 |
+| SR Channel Breakout | [Strategy_SR_Channel_Breakout.md](Strategy_SR_Channel_Breakout.md) | **結案**：retest 假說否定、無跨商品穩健 edge；僅 EURUSD breakout 可另案研究 |
 
 每份紀錄至少包含：
 

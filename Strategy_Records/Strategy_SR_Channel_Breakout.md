@@ -6,6 +6,8 @@ EA：[`Strategies/Strategy_SR_Channel_Breakout.mq5`](../Strategies/Strategy_SR_C
 
 建立日期：2026-06-29
 
+狀態：**結案（通用策略）** — retest 假說否定、裸突破不跨商品穩健（詳見 §4）。EURUSD 專用 breakout 可另開研究線。
+
 ## 1. 策略與版本
 
 - 指標已含 Phase 1 升級：ATR 自適應通道寬度（`ChannelWidthMode`，預設 Range%）、相對 tick volume 突破確認（`UseVolumeFilter`，預設關閉）。兩者預設＝舊版行為。
@@ -58,17 +60,31 @@ EA：[`Strategies/Strategy_SR_Channel_Breakout.mq5`](../Strategies/Strategy_SR_C
 
 - 解讀：**裸突破 edge 不穩健、無法泛化。** EURUSD 真的好、USDJPY 邊際正，但 GBP 虧、AUD 打平、XAU 以 68.7% 回撤換取帳面獲利（不可交易，且暴露 ATR 風險手數在高波動商品失控）。5 商品：1 強 1 微正 1 平 1 虧 1 爆 → 典型「靠少數商品過去特性擬合」。
 
-## 4. 結論
+### S6 — Phase 2 retest 跨商品驗證（決勝測試，同快照成對）
+- Phase 2（SBR/RBS retest）實作完成、編譯 0 error，回歸確認乾淨（breakout buffer 程式層面未變；trade 數與 S5 的差異為 tick 資料快照漂移，跨商品系統性 ×1.5，非回歸）。
+- **方法論**：S5 的舊 baseline 屬舊資料快照，不可跨快照比較。故在**同一 binary、同一份 tick 資料**上，每商品成對重跑 breakout 與 retest。期間/設定同 S5（H1 2020.06–2026.06、real ticks、CWP=2、MinStr=1、MaxSR=3、SL1.5/TP2.0、RetestTolerATR=0.10、RetestExpiryBars=20）。
 
-- 純突破訊號**不足以成為可部署的穩健策略**；但 EURUSD 的表現顯示「SR 通道」底層結構有東西，問題在裸突破訊號品質不足（易被假突破洗，GBP 勝率僅 22%）。
-- 決策：**保留結構、升級訊號** → 進行 Phase 2（SBR/RBS 回測進場），以「能否讓跨商品翻正」作為此策略生死的最終判準。
+| 商品 | Breakout PF / 淨利 / 筆 / 勝率 | Retest PF / 淨利 / 筆 / 勝率 | 結果 |
+|---|---|---|---|
+| EURUSD | 1.47 / +2573 / 103 / 35.0% | 1.41 / +1957 / 83 / 38.6% | ❌ 變差 |
+| USDJPY | 1.30 / +2134 / 133 / 34.6% | 1.12 / +783 / 106 / 34.9% | ❌ 明顯變差 |
+| AUDUSD | 0.92 / −591 / 136 / 27.9% | 0.90 / −699 / 112 / 29.5% | ❌ 略差（仍負）|
+| GBPUSD | 0.70 / −2815 / 187 / 19.3% | 0.64 / −3160 / 147 / 21.8% | ❌ 更差 |
 
-## 5. 下一步測試計畫
+- **判讀：retest 在 4 個商品全部 ≤ breakout。** 未救起 GBP/AUD（仍負、且更負），並砍掉 EUR/JPY 的獲利。
+- **機制**：retest 只把交易數砍 ~20%（非強過濾）——預設 `RetestTolerATR=0.10` + 寬鬆觸碰條件使 retest 在突破後緊接一兩根即觸發。被砍掉的 20% 多為「突破後頭也不回的 runaway 贏單」，留下在關卡來回磨的弱單 → 反而更差。這是回測進場的結構代價（系統性錯過最強續勢單），非 bug。
 
-1. 實作 Phase 2（回測進場）：見 [SRChannel_Retest_SBR_RBS_Upgrade.md](../Strategy_Ideas/SRChannel_Retest_SBR_RBS_Upgrade.md)。
-2. 重跑 S5 跨商品（改用 `SIG_RETEST`），比較是否多數商品翻正。
-3. 若 retest 跨商品穩健 → 對存活商品做 walk-forward + SL/TP 第二階段最佳化 + spread/slippage stress。
-4. 順帶修正 `OnTester`（加 PF 下限、DD 上限懲罰），避免最佳化偏向過度交易組。
+## 4. 結論（結案）
+
+- **Phase 2 retest 假說否定**：跨商品成對測試證明 retest 未能讓策略翻身，4 商品全部 ≤ 裸突破。
+- 裸突破本身**只在 EURUSD（強）/ USDJPY（邊際）有薄 edge，GBP 虧、AUD 平**——**SR-channel 突破/回測概念無跨商品穩健 edge**。
+- **決策：SR-channel 作為「通用策略」結案。** 最佳版本是**裸突破**（非 retest）。若日後續做，僅以 **EURUSD 專用 breakout** 另開研究線（walk-forward + SL/TP 最佳化），不再走 retest 方向。
+
+## 5. 後續（非本策略主線）
+
+1. （選做）EURUSD 專用 breakout：walk-forward + SL/TP 第二階段最佳化 + spread/slippage stress，再判是否值得 demo forward。
+2. （獨立小任務）修正 `OnTester`：加 PF 下限、DD 上限懲罰，避免最佳化偏向過度交易組（本研究發現的評分缺陷）。
+3. 指標的 Phase 1（ATR 寬度、量過濾）與 Phase 2（retest buffer）程式碼保留可用，僅策略結論為否定。
 
 ## 6. 已知無效 / 注意事項
 
