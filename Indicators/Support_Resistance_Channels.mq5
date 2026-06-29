@@ -52,6 +52,12 @@ enum ENUM_SR_SOURCE
    SRC_CLOSEOPEN = 1  // Close/Open
   };
 
+enum ENUM_SR_WIDTH_MODE
+  {
+   WIDTH_RANGE_PCT = 0, // Range %
+   WIDTH_ATR       = 1  // ATR
+  };
+
 input group "Settings"
 input int             PivotPeriod    = 10;             // Pivot Period (4-30)
 input ENUM_SR_SOURCE  SourceMode     = SRC_HIGHLOW;    // Source for Pivot Points
@@ -59,6 +65,12 @@ input int             ChannelWidthPct= 5;              // Max Channel Width % (1
 input int             MinStrength    = 1;              // Minimum Strength (>=1)
 input int             MaxNumSR       = 6;              // Maximum Number of S/R (1-10)
 input int             Loopback       = 290;            // Loopback Period (100-400)
+input ENUM_SR_WIDTH_MODE ChannelWidthMode = WIDTH_RANGE_PCT; // Channel Width Mode
+input int             ATRLen         = 14;             // ATR Length for channel width
+input double          ATRMult        = 0.3;            // ATR Multiplier for channel width
+input bool            UseVolumeFilter= false;          // Confirm breakouts by relative tick volume
+input int             VolMaLen       = 20;             // Tick volume MA length
+input double          VolMult        = 1.0;            // Tick volume multiplier
 
 input group "Colors"
 input color           ResColor       = clrTomato;      // Resistance color (price below channel)
@@ -98,6 +110,7 @@ double  SRStren[10];   // 對應通道強度
 
 int     handleMA1 = INVALID_HANDLE;
 int     handleMA2 = INVALID_HANDLE;
+int     handleATR = INVALID_HANDLE;
 
 datetime g_lastBar = 0;
 
@@ -107,7 +120,8 @@ const string PFXBK  = "SRchan_brk_";   // 突破標記前綴
 const string PFXBO  = "SRchan_bnc_";   // 反彈標記前綴
 
 //--- 經輸入驗證後的有效參數
-int g_prd, g_chw, g_minstr, g_maxsr, g_loopback;
+int g_prd, g_chw, g_minstr, g_maxsr, g_loopback, g_atrlen, g_vollen;
+double g_atrmult, g_volmult;
 
 //+------------------------------------------------------------------+
 //| 初始化                                                           |
@@ -120,6 +134,10 @@ int OnInit()
    g_minstr   = (int)MathMax(1,   MinStrength);
    g_maxsr    = (int)MathMax(1,   MathMin(10, MaxNumSR)) - 1; // Pine: 輸入值 - 1
    g_loopback = (int)MathMax(100, MathMin(400, Loopback));
+   g_atrlen   = (int)MathMax(1,   ATRLen);
+   g_atrmult  = MathMax(0.0,      ATRMult);
+   g_vollen   = (int)MathMax(1,   VolMaLen);
+   g_volmult  = MathMax(0.0,      VolMult);
 
    SetIndexBuffer(0, bufMA1,     INDICATOR_DATA);
    SetIndexBuffer(1, bufMA2,     INDICATOR_DATA);
@@ -153,6 +171,12 @@ int OnInit()
       if(handleMA2 == INVALID_HANDLE)
          Print("SRchannel: 建立 MA2 handle 失敗, error=", GetLastError());
      }
+   if(ChannelWidthMode == WIDTH_ATR)
+     {
+      handleATR = iATR(_Symbol, _Period, g_atrlen);
+      if(handleATR == INVALID_HANDLE)
+         Print("SRchannel: 建立 ATR handle 失敗, error=", GetLastError());
+     }
 
    ArrayInitialize(SR, 0.0);
    ArrayInitialize(SRStren, 0.0);
@@ -170,6 +194,7 @@ void OnDeinit(const int reason)
   {
    if(handleMA1 != INVALID_HANDLE) IndicatorRelease(handleMA1);
    if(handleMA2 != INVALID_HANDLE) IndicatorRelease(handleMA2);
+   if(handleATR != INVALID_HANDLE) IndicatorRelease(handleATR);
 
 //--- 清除所有本指標建立的圖表物件
    ObjectsDeleteAll(0, PFX);
@@ -200,6 +225,7 @@ int OnCalculate(const int rates_total,
    ArraySetAsSeries(high,  true);
    ArraySetAsSeries(low,   true);
    ArraySetAsSeries(close, true);
+   ArraySetAsSeries(tick_volume, true);
 
 //--- 更新 MA 線
    UpdateMA(handleMA1, bufMA1, rates_total);
@@ -223,7 +249,7 @@ int OnCalculate(const int rates_total,
       ComputeSR(time, open, high, low, close, rates_total);
       RedrawChannels(time, close, rates_total);
       RedrawPivots(time, rates_total);
-      UpdateSignals(time, high, low, close, rates_total);
+      UpdateSignals(time, high, low, close, tick_volume, rates_total);
       g_lastBar = time[0];
       ChartRedraw();
      }
@@ -318,12 +344,27 @@ void ComputeSR(const datetime &time[],
    if(npv == 0)
       return;
 
-//--- 通道最大寬度 = 近 300 棒 (highest-lowest) * ChannelW% (自 shift 1 起，排除形成中棒)
+//--- 通道最大寬度：預設維持舊版 Range% 公式；ATR 模式僅在明確切換時改變通道幾何。
    int n300 = MathMin(300, rates_total - 1);
    int hidx = ArrayMaximum(high, 1, n300);
    int lidx = ArrayMinimum(low, 1, n300);
    double cwidth = 0.0;
-   if(hidx >= 0 && lidx >= 0)
+   bool usedRangeWidth = true;
+   if(ChannelWidthMode == WIDTH_ATR && handleATR != INVALID_HANDLE)
+     {
+      double atrVal[1];
+      if(CopyBuffer(handleATR, 0, 1, 1, atrVal) > 0 && atrVal[0] > 0.0)
+        {
+         cwidth = atrVal[0] * g_atrmult;
+         usedRangeWidth = false;
+        }
+      else
+         Print("SRchannel: ATR 通道寬度讀取失敗，回退 Range% 公式, error=", GetLastError());
+     }
+   else if(ChannelWidthMode == WIDTH_ATR)
+      Print("SRchannel: ATR handle 無效，回退 Range% 公式");
+
+   if(usedRangeWidth && hidx >= 0 && lidx >= 0)
       cwidth = (high[hidx] - low[lidx]) * g_chw / 100.0;
 
 //--- 對每個樞紐求其通道 (hi/lo) 與初始強度 (每納入一個樞紐 +20)
@@ -559,6 +600,7 @@ void UpdateSignals(const datetime &time[],
                    const double &high[],
                    const double &low[],
                    const double &close[],
+                   const long &tick_volume[],
                    const int rates_total)
   {
    if(rates_total < 3)
@@ -597,6 +639,20 @@ void UpdateSignals(const datetime &time[],
          if(top == 0.0 && bottom == 0.0) continue;
          if(cPrev <= top && cClosed > top)        resBroken = true; // 向上突破壓力
          if(cPrev >= bottom && cClosed < bottom)  supBroken = true; // 向下跌破支撐
+        }
+     }
+
+   if(UseVolumeFilter && (resBroken || supBroken) && rates_total > g_vollen + 1)
+     {
+      double volSum = 0.0;
+      for(int i = 2; i <= g_vollen + 1; i++)
+         volSum += (double)tick_volume[i];
+
+      double avgVol = volSum / (double)g_vollen;
+      if((double)tick_volume[1] <= g_volmult * avgVol)
+        {
+         resBroken = false;
+         supBroken = false;
         }
      }
 

@@ -30,4 +30,4 @@
 | PrecisionSniper + SNR 位置過濾 | [PrecisionSniper_SNR_Filter.md](PrecisionSniper_SNR_Filter.md) | 優先研究方向 |
 | SR Channel 指標升級：新增反彈訊號 | [SRChannel_Bounce_Signal_Upgrade.md](SRChannel_Bounce_Signal_Upgrade.md) | 已實作 / 待編譯與回測驗證 |
 | SR Channel 指標升級：自適應 Pivot 取樣窗 | [SRChannel_Adaptive_Pivot_Window_Upgrade.md](SRChannel_Adaptive_Pivot_Window_Upgrade.md) | 發想 / 待實作（吸收自 SRv2） |
-| 外部 SNR 指標想法彙整（6 支 TradingView） | [SNR_External_Ideas_Harvest.md](SNR_External_Ideas_Harvest.md) | 彙整 / 待逐項評估與實作 |
+| 外部 SNR 指標想法彙整（6 支 TradingView） | [SNR_External_Ideas_Harvest.md](SNR_External_Ideas_Harvest.md) | Phase 1 A/C 已實作 / 其餘待評估 |

@@ -2,7 +2,7 @@
 
 建立日期：2026-06-29
 
-狀態：彙整 / 待逐項評估與選擇性實作
+狀態：Phase 1 A/C 已實作 / 其餘待逐項評估
 
 審視對象（皆為 TradingView Pine 指標，僅取「方法與想法」，不照搬程式碼；採用時各依其授權標註來源）：
 
@@ -96,8 +96,8 @@
 
 ## 4. 建議落地順序
 
-1. **A 量確認**（最便宜、直接提升突破品質）。
-2. **C ATR 寬度**（便宜、改善 zone 本身）。
+1. **A 量確認**（最便宜、直接提升突破品質）—— Phase 1 已實作為 `UseVolumeFilter / VolMaLen / VolMult`，只 gate breakout buffer。
+2. **C ATR 寬度**（便宜、改善 zone 本身）—— Phase 1 已實作為 `ChannelWidthMode=WIDTH_ATR / ATRLen / ATRMult`，預設仍維持 Range%。
 3. **B 回測進場**（最高交易價值，但需少量 stateful，排在訊號品質補強後）。
 4. **F 強度老化/新鮮度** 與 [自適應 pivot 窗](SRChannel_Adaptive_Pivot_Window_Upgrade.md) 合併設計。
 5. **D HTF confluence**、**G Volume Profile** 各自獨立較大研究，最後排程。

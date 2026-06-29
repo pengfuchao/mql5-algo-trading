@@ -62,6 +62,12 @@ enum ENUM_SR_SOURCE
    SRC_CLOSEOPEN = 1  // Close/Open
   };
 
+enum ENUM_SR_WIDTH_MODE
+  {
+   WIDTH_RANGE_PCT = 0, // Range %
+   WIDTH_ATR       = 1  // ATR
+  };
+
 enum ENUM_SR_SIGNAL_MODE
   {
    SIG_BREAKOUT = 0,   // Breakout only
@@ -78,6 +84,12 @@ input int             InpChannelWidthPct= 5;             // Max Channel Width %
 input int             InpMinStrength    = 1;             // Minimum Strength
 input int             InpMaxNumSR       = 6;             // Maximum Number of S/R
 input int             InpLoopback       = 290;           // Loopback Period
+input ENUM_SR_WIDTH_MODE InpChannelWidthMode = WIDTH_RANGE_PCT; // Channel Width Mode
+input int             InpATRLen         = 14;            // ATR Length for channel width
+input double          InpATRMult        = 0.3;           // ATR Multiplier for channel width
+input bool            InpUseVolumeFilter= false;         // Confirm breakouts by relative tick volume
+input int             InpVolMaLen       = 20;            // Tick volume MA length
+input double          InpVolMult        = 1.0;           // Tick volume multiplier
 
 input group "Signal"
 input ENUM_SR_SIGNAL_MODE InpSignalMode = SIG_BREAKOUT;  // Signal mode
@@ -325,7 +337,9 @@ int OnInit()
 
    srHandle = iCustom(_Symbol, _Period, InpIndicatorName,
                       InpPivotPeriod, InpSourceMode, InpChannelWidthPct,
-                      InpMinStrength, InpMaxNumSR, InpLoopback);
+                      InpMinStrength, InpMaxNumSR, InpLoopback,
+                      InpChannelWidthMode, InpATRLen, InpATRMult,
+                      InpUseVolumeFilter, InpVolMaLen, InpVolMult);
    if(srHandle == INVALID_HANDLE)
      {
       PrintFormat("無法載入指標 '%s' (請確認已編譯且路徑正確), error=%d",
