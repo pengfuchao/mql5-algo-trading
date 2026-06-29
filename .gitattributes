@@ -1,0 +1,7 @@
+# MQL 原始碼：工作目錄一律 CRLF (MetaEditor 慣例)，repo 內正規化為 LF。
+# 既有 blob 已是 LF，故套用後工作目錄的 CRLF 不再被視為變更 (零 churn)。
+*.mq5  text eol=crlf
+*.mqh  text eol=crlf
+
+# 編譯後二進位：停用文字/EOL 處理。
+*.ex5  binary

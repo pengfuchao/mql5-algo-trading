@@ -135,9 +135,9 @@ int OnInit()
    g_maxsr    = (int)MathMax(1,   MathMin(10, MaxNumSR)) - 1; // Pine: 輸入值 - 1
    g_loopback = (int)MathMax(100, MathMin(400, Loopback));
    g_atrlen   = (int)MathMax(1,   ATRLen);
-   g_atrmult  = MathMax(0.0,      ATRMult);
+   g_atrmult  = MathMax(0.01,     ATRMult);   // 下限 0.01：避免 cwidth=0 使通道退化成單點
    g_vollen   = (int)MathMax(1,   VolMaLen);
-   g_volmult  = MathMax(0.0,      VolMult);
+   g_volmult  = MathMax(0.0,      VolMult);    // 0 等同只擋零量棒，無害，保留
 
    SetIndexBuffer(0, bufMA1,     INDICATOR_DATA);
    SetIndexBuffer(1, bufMA2,     INDICATOR_DATA);
@@ -350,19 +350,26 @@ void ComputeSR(const datetime &time[],
    int lidx = ArrayMinimum(low, 1, n300);
    double cwidth = 0.0;
    bool usedRangeWidth = true;
-   if(ChannelWidthMode == WIDTH_ATR && handleATR != INVALID_HANDLE)
+   if(ChannelWidthMode == WIDTH_ATR)
      {
+      static bool atrWarned = false;   // 僅在真正錯誤時警告一次，避免每根新棒洗版
       double atrVal[1];
-      if(CopyBuffer(handleATR, 0, 1, 1, atrVal) > 0 && atrVal[0] > 0.0)
+      bool atrReady = (handleATR != INVALID_HANDLE && BarsCalculated(handleATR) > 1);
+      if(atrReady && CopyBuffer(handleATR, 0, 1, 1, atrVal) > 0 && atrVal[0] > 0.0)
         {
          cwidth = atrVal[0] * g_atrmult;
          usedRangeWidth = false;
         }
-      else
-         Print("SRchannel: ATR 通道寬度讀取失敗，回退 Range% 公式, error=", GetLastError());
+      else if(handleATR != INVALID_HANDLE && BarsCalculated(handleATR) <= 1)
+        {
+         // ATR 尚在暖機 → 靜默回退 Range%，待 ATR 就緒後自動切換 (不警告)
+        }
+      else if(!atrWarned)
+        {
+         Print("SRchannel: ATR 通道寬度不可用 (handle/資料無效)，回退 Range% 公式, error=", GetLastError());
+         atrWarned = true;
+        }
      }
-   else if(ChannelWidthMode == WIDTH_ATR)
-      Print("SRchannel: ATR handle 無效，回退 Range% 公式");
 
    if(usedRangeWidth && hidx >= 0 && lidx >= 0)
       cwidth = (high[hidx] - low[lidx]) * g_chw / 100.0;

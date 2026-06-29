@@ -330,6 +330,15 @@ int OnInit()
      { Print("InpTPRatio 不可為負");                         return(INIT_PARAMETERS_INCORRECT); }
    if(InpMaxPositions < 1)
      { Print("InpMaxPositions 必須 >= 1");                   return(INIT_PARAMETERS_INCORRECT); }
+   // Phase 1 新增參數驗證 (僅在相關模式啟用時檢查，避免誤拒未使用的參數)
+   if(InpChannelWidthMode == WIDTH_ATR && InpATRLen < 1)
+     { Print("InpATRLen 必須 >= 1 (ATR 寬度模式)");          return(INIT_PARAMETERS_INCORRECT); }
+   if(InpChannelWidthMode == WIDTH_ATR && InpATRMult <= 0.0)
+     { Print("InpATRMult 必須 > 0 (ATR 寬度模式)");          return(INIT_PARAMETERS_INCORRECT); }
+   if(InpUseVolumeFilter && InpVolMaLen < 1)
+     { Print("InpVolMaLen 必須 >= 1 (量過濾啟用時)");        return(INIT_PARAMETERS_INCORRECT); }
+   if(InpUseVolumeFilter && InpVolMult < 0.0)
+     { Print("InpVolMult 不可為負 (量過濾啟用時)");          return(INIT_PARAMETERS_INCORRECT); }
 
    trade.SetExpertMagicNumber(InpMagic);
    trade.SetDeviationInPoints(InpDeviation);
