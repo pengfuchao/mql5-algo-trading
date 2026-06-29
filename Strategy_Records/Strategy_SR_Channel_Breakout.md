@@ -6,7 +6,7 @@ EA：[`Strategies/Strategy_SR_Channel_Breakout.mq5`](../Strategies/Strategy_SR_C
 
 建立日期：2026-06-29
 
-狀態：**結案（通用策略）** — retest 假說否定、裸突破不跨商品穩健（詳見 §4）。EURUSD 專用 breakout 可另開研究線。
+狀態：**通用策略結案**（retest 否定、不跨商品穩健）；**EURUSD 專用 breakout 晉級** → 回測全關通過，已移入 [`Strategy_Live_Candidates/`](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md) 待 demo forward（詳見 §S7）。
 
 ## 1. 策略與版本
 
@@ -74,17 +74,41 @@ EA：[`Strategies/Strategy_SR_Channel_Breakout.mq5`](../Strategies/Strategy_SR_C
 - **判讀：retest 在 4 個商品全部 ≤ breakout。** 未救起 GBP/AUD（仍負、且更負），並砍掉 EUR/JPY 的獲利。
 - **機制**：retest 只把交易數砍 ~20%（非強過濾）——預設 `RetestTolerATR=0.10` + 寬鬆觸碰條件使 retest 在突破後緊接一兩根即觸發。被砍掉的 20% 多為「突破後頭也不回的 runaway 贏單」，留下在關卡來回磨的弱單 → 反而更差。這是回測進場的結構代價（系統性錯過最強續勢單），非 bug。
 
-## 4. 結論（結案）
+### S7 — EURUSD 專用 breakout：walk-forward + 成本壓測（通過，已晉級）
+固定配置：EURUSD H1、`SIG_BREAKOUT`、CWP=2、MinStr=1、MaxSR=3、SL1.5、TP2.0、Risk 1%。
 
-- **Phase 2 retest 假說否定**：跨商品成對測試證明 retest 未能讓策略翻身，4 商品全部 ≤ 裸突破。
-- 裸突破本身**只在 EURUSD（強）/ USDJPY（邊際）有薄 edge，GBP 虧、AUD 平**——**SR-channel 突破/回測概念無跨商品穩健 edge**。
-- **決策：SR-channel 作為「通用策略」結案。** 最佳版本是**裸突破**（非 retest）。若日後續做，僅以 **EURUSD 專用 breakout** 另開研究線（walk-forward + SL/TP 最佳化），不再走 retest 方向。
+1. **參數 walk-forward（內建 Forward 1/3，criterion=Sharpe，genetic，open prices）**：
+   - 最佳區 **MinStr=1 / MaxSR=3** 在 IS（Back）與 Forward **兩段都贏、且不挑 SL/TP** → 穩定高原、非單點擬合。
+   - IS 最佳組 Forward 仍正（Forward PF 1.46、+1007、DD 5.56%）。
+2. **逐年穩定性（固定配置、real ticks、6 個年窗）**：
 
-## 5. 後續（非本策略主線）
+| 年窗 | 交易 | 淨利 |
+|---|---|---|
+| 2020–21 | 1（幾乎未進場，忽略）| +196 |
+| 2021–22 | 13 | +73 |
+| 2022–23 | 17 | +261 |
+| 2023–24 | 22 | +365 |
+| 2024–25 | 29 | +1009 |
+| 2025–26 | 15 | +458 |
+| 合計 | ~97 | +2362 |
 
-1. （選做）EURUSD 專用 breakout：walk-forward + SL/TP 第二階段最佳化 + spread/slippage stress，再判是否值得 demo forward。
-2. （獨立小任務）修正 `OnTester`：加 PF 下限、DD 上限懲罰，避免最佳化偏向過度交易組（本研究發現的評分缺陷）。
-3. 指標的 Phase 1（ATR 寬度、量過濾）與 Phase 2（retest buffer）程式碼保留可用，僅策略結論為否定。
+   - **6/6 年正、無虧損年**；拿掉最強的 2024–25 後其餘 5 年仍合計 +1353，**非單年撐起**。勝率穩定 ~30–40%（靠賠率）。
+3. **成本壓測（commission $3.5/手/單邊＝來回 $7/手，real ticks 全期）**：
+   - **PF 1.42、淨利 +2180**（對照無成本 baseline PF 1.47 / +2573）→ **影響小、edge 維持**。
+
+- **結論：EURUSD 專用 breakout 通過全部回測關卡（全期 + Forward + 高原 + 逐年 + 成本）→ 晉級 demo forward。**
+- 部署卡（寫死最優設置）：[Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md)。
+
+## 4. 結論
+
+- **通用策略結案**：Phase 2 retest 假說否定、SR-channel 突破/回測**無跨商品穩健 edge**（GBP 虧、AUD 平、XAU 爆）。最佳版本是裸突破。
+- **EURUSD 專用 breakout 晉級**：單商品裸突破通過 walk-forward + 逐年 + 成本壓測，已移入 `Strategy_Live_Candidates/` 等待 demo forward 實戰檢驗。
+- 指標 Phase 1（ATR 寬度、量過濾）+ Phase 2（retest buffer）程式碼保留可用。
+
+## 5. 後續
+
+1. **EURUSD 線 → demo forward**（見部署卡）；統計級確認需 6–12 個月。
+2. （獨立小任務）修正 `OnTester`：加 PF 下限、DD 上限懲罰，避免最佳化偏向過度交易組。
 
 ## 6. 已知無效 / 注意事項
 

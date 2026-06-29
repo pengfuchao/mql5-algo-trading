@@ -20,7 +20,7 @@
 | 策略 | 研究紀錄 | 目前狀態 |
 |---|---|---|
 | PrecisionSniperEA | [PrecisionSniperEA.md](PrecisionSniperEA.md) | 研究中；USDJPY M15 短線為最佳候選，待 demo forward |
-| SR Channel Breakout | [Strategy_SR_Channel_Breakout.md](Strategy_SR_Channel_Breakout.md) | **結案**：retest 假說否定、無跨商品穩健 edge；僅 EURUSD breakout 可另案研究 |
+| SR Channel Breakout | [Strategy_SR_Channel_Breakout.md](Strategy_SR_Channel_Breakout.md) | 通用結案；**EURUSD 專用 breakout 晉級**（回測全關通過）→ [Strategy_Live_Candidates](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md) demo forward |
 
 每份紀錄至少包含：
 

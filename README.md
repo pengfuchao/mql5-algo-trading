@@ -11,6 +11,7 @@
 *   **[Strategies](./Strategies/README.md)**: 存放各類自動化交易策略 (Expert Advisors, EA) 的完整邏輯與架構。
 *   **[Strategy_Ideas](./Strategy_Ideas/README.md)**: 存放尚未進入正式回測紀錄階段的策略發想、交易邏輯設計與研究假說。
 *   **[Strategy_Records](./Strategy_Records/README.md)**: 存放策略回測設定、實驗結果、優化紀錄與研究決策。
+*   **[Strategy_Live_Candidates](./Strategy_Live_Candidates/README.md)**: 存放回測全關通過、進入 demo/live 驗證的策略部署卡（寫死最優設置）。
 *   **[Utilities](./Utilities/README.md)**: 存放各種實用的腳本與模組，例如：圖表物件繪製、訂單管理、資金計算、時間控制等。
 
 ## 使用說明
