@@ -7,6 +7,8 @@
 #property copyright "Hammad Dilber & Antigravity"
 #property version   "1.21"
 #property description "PrecisionSniper 實盤自動跟單 Expert Advisor"
+#property tester_indicator "PrecisionSniper.ex5"
+#property tester_indicator "Support_Resistance_Channels.ex5"
 
 // 引入 MT5 標準交易庫
 #include <Trade\Trade.mqh>
@@ -38,6 +40,24 @@ enum ENUM_SL_TYPE
 {
    SL_STRUCTURE  = 0,  // 結構止損 (Swing High/Low)
    SL_FIXED_ATR  = 1,  // 固定 ATR 止損
+};
+
+enum ENUM_SR_SOURCE
+{
+   SRC_HIGHLOW   = 0,  // High/Low
+   SRC_CLOSEOPEN = 1,  // Close/Open
+};
+
+enum ENUM_SR_WIDTH_MODE
+{
+   WIDTH_RANGE_PCT = 0, // Range %
+   WIDTH_ATR       = 1, // ATR
+};
+
+enum ENUM_SNR_FILTER_MODE
+{
+   SNR_BLOCK_ONLY   = 0, // Block only
+   SNR_CONFIRMATION = 1, // Confirmation
 };
 
 //====================================================================
@@ -90,10 +110,33 @@ input string          __FILTER_SET__ = "====== [ 信號過濾篩選 ] ======";
 input ENUM_GRADE_FILTER GradeFilter  = GRADE_ALL;      // 信號等級篩選 (Grade Filter)
 input bool            HideCGrade     = true;         // 隱藏並拒絕 C-Grade 信號
 
+input string          __SNR_SET__    = "====== [ SNR 位置過濾 ] ======";
+input bool            InpUseSNRFilter = false;       // 啟用 PrecisionSniper + SNR composite filter
+input string          InpSNRIndName   = "Support_Resistance_Channels"; // SNR channel indicator name
+input ENUM_SNR_FILTER_MODE InpSNRMode = SNR_BLOCK_ONLY; // SNR filter mode
+input double          InpSNRBlockDistanceATR   = 0.3; // Block distance = ATR multiplier
+input double          InpSNRConfirmDistanceATR = 1.0; // Confirmation distance = ATR multiplier
+input bool            InpSNRDebugLog = false;        // 逐訊號印出 SNR 讀值 (診斷用，回測短區間再開)
+input int             InpSNRPivotPeriod      = 10;           // SNR Pivot Period
+input ENUM_SR_SOURCE  InpSNRSourceMode       = SRC_HIGHLOW;  // SNR Source
+input int             InpSNRChannelWidthPct  = 2;            // SNR Max Channel Width %
+input int             InpSNRMinStrength      = 1;            // SNR Minimum Strength
+input int             InpSNRMaxNumSR         = 3;            // SNR Maximum Number of S/R
+input int             InpSNRLoopback         = 290;          // SNR Loopback Period
+input ENUM_SR_WIDTH_MODE InpSNRChannelWidthMode = WIDTH_RANGE_PCT; // SNR Channel Width Mode
+input int             InpSNRATRLen           = 14;           // SNR ATR Length
+input double          InpSNRATRMult          = 0.3;          // SNR ATR Multiplier
+input bool            InpSNRUseVolumeFilter  = false;        // SNR breakout volume filter
+input int             InpSNRVolMaLen         = 20;           // SNR tick volume MA length
+input double          InpSNRVolMult          = 1.0;          // SNR tick volume multiplier
+input double          InpSNRRetestTolerATR   = 0.10;         // SNR retest tolerance
+input int             InpSNRRetestExpiryBars = 20;           // SNR retest expiry bars
+
 //====================================================================
 // 全域變數宣告
 //====================================================================
 int      hIndicator     = INVALID_HANDLE; // Custom Indicator 句柄
+int      hSNRIndicator  = INVALID_HANDLE; // S/R channel indicator 句柄
 int      hATR           = INVALID_HANDLE; // ATR 句柄 (EA 計算 SL 用)
 datetime lastBarTime    = 0;              // 記錄最新 K 線開盤時間
 CTrade   trade;                           //--- 全域變數宣告區
@@ -307,6 +350,87 @@ bool ShouldCloseByMaxHoldingBars(string &reason)
    return false;
 }
 
+bool SNRFilterAllowsSignal(bool isBuy)
+{
+   if(!InpUseSNRFilter)
+      return true;
+   if(hSNRIndicator == INVALID_HANDLE)
+   {
+      Print("PrecisionSniperEA: SNR filter 啟用但 SNR indicator handle 無效，略過本次 raw signal。");
+      return false;
+   }
+   if(BarsCalculated(hSNRIndicator) < 2 || BarsCalculated(hATR) < 2)
+   {
+      Print("PrecisionSniperEA: SNR indicator/ATR 尚未完成計算，略過本次 raw signal。");
+      return false;
+   }
+
+   double nearRes[1], nearSup[1], atrBuf[1];
+   if(CopyBuffer(hSNRIndicator, 4, 1, 1, nearRes) <= 0 ||
+      CopyBuffer(hSNRIndicator, 5, 1, 1, nearSup) <= 0 ||
+      CopyBuffer(hATR,          0, 1, 1, atrBuf)  <= 0)
+   {
+      Print("PrecisionSniperEA: 無法讀取 SNR/ATR buffer，略過本次 raw signal。");
+      return false;
+   }
+
+   double closedClose = iClose(Symbol(), PERIOD_CURRENT, 1);
+   double atrVal = atrBuf[0];
+   if(closedClose <= 0.0)
+   {
+      Print("PrecisionSniperEA: 無法讀取已收盤 close，略過本次 raw signal。");
+      return false;
+   }
+   if(atrVal <= 0.0)
+      return true;
+
+   double res = nearRes[0];
+   double sup = nearSup[0];
+   double distRes = (res > 0.0) ? MathAbs(res - closedClose) : DBL_MAX;
+   double distSup = (sup > 0.0) ? MathAbs(closedClose - sup) : DBL_MAX;
+   bool nearResBlock = (res > 0.0 && distRes <= atrVal * InpSNRBlockDistanceATR);
+   bool nearSupBlock = (sup > 0.0 && distSup <= atrVal * InpSNRBlockDistanceATR);
+
+   bool allowed = true;
+   if(InpSNRMode == SNR_BLOCK_ONLY)
+      allowed = isBuy ? !nearResBlock : !nearSupBlock;
+   else
+   {
+      bool nearSupConfirm = (sup > 0.0 && distSup <= atrVal * InpSNRConfirmDistanceATR);
+      bool nearResConfirm = (res > 0.0 && distRes <= atrVal * InpSNRConfirmDistanceATR);
+      allowed = isBuy ? (nearSupConfirm && !nearResBlock) : (nearResConfirm && !nearSupBlock);
+   }
+
+   if(InpSNRDebugLog)
+   {
+      double drAtr = (res > 0.0 && atrVal > 0.0) ? distRes / atrVal : -1.0;
+      double dsAtr = (sup > 0.0 && atrVal > 0.0) ? distSup / atrVal : -1.0;
+      PrintFormat("PrecisionSniperEA[SNR診斷]: %s訊號 close=%s 最近壓力=%s 最近支撐=%s atr=%s 距壓=%.2fATR 距撐=%.2fATR => %s",
+                  isBuy ? "多" : "空",
+                  DoubleToString(closedClose, g_digits),
+                  DoubleToString(res, g_digits),
+                  DoubleToString(sup, g_digits),
+                  DoubleToString(atrVal, g_digits),
+                  drAtr, dsAtr,
+                  allowed ? "放行" : "擋下");
+   }
+
+   if(!allowed)
+   {
+      PrintFormat("PrecisionSniperEA: SNR blocked %s raw signal. close=%s res=%s sup=%s atr=%s mode=%d blockATR=%.2f confirmATR=%.2f",
+                  isBuy ? "Buy" : "Sell",
+                  DoubleToString(closedClose, g_digits),
+                  DoubleToString(res, g_digits),
+                  DoubleToString(sup, g_digits),
+                  DoubleToString(atrVal, g_digits),
+                  (int)InpSNRMode,
+                  InpSNRBlockDistanceATR,
+                  InpSNRConfirmDistanceATR);
+   }
+
+   return allowed;
+}
+
 //====================================================================
 // EA 初始化函數 (OnInit)
 //====================================================================
@@ -355,8 +479,9 @@ int OnInit()
    //    關閉將導致 EA 永遠讀不到信號。其餘 4 個視覺旗標 (EMA/TPSL/Trail/Dash) 才可關。
    g_showVisual = !(bool)MQLInfoInteger(MQL_OPTIMIZATION);
 
-   // 初始化 Custom Indicator 句柄
-   // 傳入與指標完全一致的參數列表以確保即時同步
+   // 初始化 PrecisionSniper raw signal 指標。
+   // SNR filter 在 EA 內直接套用，避免 Strategy Tester 中 nested iCustom
+   // (PrecisionSniper_SNR -> PrecisionSniper -> built-in MA) 偶發 handle 失敗。
    hIndicator = iCustom(Symbol(), PERIOD_CURRENT, InpIndName,
                         Preset, HTF, C_EmaFast, C_EmaSlow, C_EmaTrend, C_RSI, C_ATR, C_MinScore, C_SLMult,
                         TP1_RR, TP2_RR, TP3_RR, SLMult, CooldownBars, UseTrail, (SLType == SL_STRUCTURE), SwingLB,
@@ -369,6 +494,26 @@ int OnInit()
    {
       Alert("PrecisionSniperEA: 無法載入指標 [" + InpIndName + "]！請檢查檔名是否正確。");
       return INIT_FAILED;
+   }
+
+   if(InpUseSNRFilter)
+   {
+      string snrIndicatorName = InpSNRIndName;
+      if(snrIndicatorName == "PrecisionSniper_SNR")
+      {
+         Print("PrecisionSniperEA: 偵測到舊版 composite SNR indicator 名稱；EA 會改用 Support_Resistance_Channels 直接過濾。");
+         snrIndicatorName = "Support_Resistance_Channels";
+      }
+
+      hSNRIndicator = iCustom(Symbol(), PERIOD_CURRENT, snrIndicatorName,
+                              InpSNRPivotPeriod, InpSNRSourceMode, InpSNRChannelWidthPct, InpSNRMinStrength, InpSNRMaxNumSR, InpSNRLoopback,
+                              InpSNRChannelWidthMode, InpSNRATRLen, InpSNRATRMult, InpSNRUseVolumeFilter, InpSNRVolMaLen, InpSNRVolMult,
+                              InpSNRRetestTolerATR, InpSNRRetestExpiryBars);
+      if(hSNRIndicator == INVALID_HANDLE)
+      {
+         Alert("PrecisionSniperEA: 無法載入 SNR 指標 [" + snrIndicatorName + "]！請檢查檔名是否正確。");
+         return INIT_FAILED;
+      }
    }
    
    // 初始化 ATR 句柄 (用於 EA 自主 SL 計算)
@@ -395,6 +540,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    if(hIndicator != INVALID_HANDLE) IndicatorRelease(hIndicator);
+   if(hSNRIndicator != INVALID_HANDLE) IndicatorRelease(hSNRIndicator);
    if(hATR != INVALID_HANDLE)       IndicatorRelease(hATR);
    
    // 清除 EA 自繪面板物件
@@ -452,36 +598,44 @@ void OnTick()
       return;
    }
    
-   bool signalBuy  = (buySig[0] > 0);
-   bool signalSell = (sellSig[0] > 0);
+   bool rawBuy  = (buySig[0] > 0);
+   bool rawSell = (sellSig[0] > 0);
 
    // Buffer 成功讀取後才標記此 K 已處理；spread/buffer 暫時失敗不會永久漏訊號。
    lastBarTime = currentBarTime;
-   
+
    // 5. 交易決策執行
-   if(signalBuy)
+   //    SNR filter 僅為進場位置過濾器：raw 反向訊號仍先平掉反向倉 (風控)，
+   //    只有「開新倉」需通過 SNRFilterAllowsSignal；被擋方向不開新倉但不影響反向平倉。
+   if(rawBuy)
    {
       Print("PrecisionSniperEA: 偵測到 Buy 入場信號！");
-      // 信號反向平倉：先平掉所有賣單
+      // 信號反向平倉：先平掉所有賣單 (依 raw 訊號，不受 SNR filter 壓抑)
       if(!ClosePositions(POSITION_TYPE_SELL))
       {
          Print("PrecisionSniperEA: 反向 Sell 平倉未完全成功，取消本根 Buy 進場。");
          return;
       }
-      // 執行買入開倉
-      OpenPosition(POSITION_TYPE_BUY);
+      // 執行買入開倉 (僅在通過 SNR filter 時)
+      if(SNRFilterAllowsSignal(true))
+         OpenPosition(POSITION_TYPE_BUY);
+      else
+         Print("PrecisionSniperEA: SNR 擋下 Buy 新倉，僅執行反向平空，不開多。");
    }
-   else if(signalSell)
+   else if(rawSell)
    {
       Print("PrecisionSniperEA: 偵測到 Sell 入場信號！");
-      // 信號反向平倉：先平掉所有買單
+      // 信號反向平倉：先平掉所有買單 (依 raw 訊號，不受 SNR filter 壓抑)
       if(!ClosePositions(POSITION_TYPE_BUY))
       {
          Print("PrecisionSniperEA: 反向 Buy 平倉未完全成功，取消本根 Sell 進場。");
          return;
       }
-      // 執行賣出開倉
-      OpenPosition(POSITION_TYPE_SELL);
+      // 執行賣出開倉 (僅在通過 SNR filter 時)
+      if(SNRFilterAllowsSignal(false))
+         OpenPosition(POSITION_TYPE_SELL);
+      else
+         Print("PrecisionSniperEA: SNR 擋下 Sell 新倉，僅執行反向平多，不開空。");
    }
 }
 

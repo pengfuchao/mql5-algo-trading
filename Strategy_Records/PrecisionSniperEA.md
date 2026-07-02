@@ -1,6 +1,6 @@
 # PrecisionSniperEA Strategy Research Log
 
-最後更新：2026-06-27
+最後更新：2026-07-02
 
 > 本研究日誌遵循 [MT5 Strategy Research Workflow](MT5_Strategy_Research_Workflow.md)。流程定義、OOS 封存、統計穩健性（DSR / PBO / Monte Carlo）、時區與三倍 swap 規則請參考該文件。
 
@@ -234,6 +234,32 @@ GradeFilter=All
 - `C_MinScore=7`：淘汰，交易數過少且負期望。
 - 目前 Min Score 不是有效優化方向。
 
+### 4.3 PrecisionSniper + SNR 通道距離過濾（淘汰）
+
+構想：在 PrecisionSniper 原始訊號上疊加一層 SNR（Support/Resistance channel）距離過濾 —— 做多訊號若太靠近壓力區就擋掉、做空訊號若太靠近支撐區就擋掉；反向訊號仍先平掉反向倉，只有「開新倉」受過濾（B 模式 / `SNR_BLOCK_ONLY`）。
+
+架構：`InpUseSNRFilter=true` 時，EA 以 `iCustom` 同時讀 `PrecisionSniper`（raw buy/sell buffer 3/4）與 `Support_Resistance_Channels`（NearestRes buffer 4 / NearestSup buffer 5），用 `距離 ≤ ATR × InpSNRBlockDistanceATR` 判定「太近」。預設 `InpUseSNRFilter=false`。
+
+測試：`USDJPY / M15`，先跑長樣本比較，再以 2026.05 單月開 `InpSNRDebugLog` 做逐訊號診斷。
+
+結果與排查過程：
+
+| 階段 | 觀察 |
+|---|---|
+| 開/關 filter 長樣本比較 | 幾乎相同（withsnr 63.13 vs nosnr 60.02，6 年只有 2 筆 sell 被擋） |
+| 掃 `InpSNRBlockDistanceATR` 0.3→5.0 | 全部相同 = baseline 217 筆，filter 形同無作用 |
+| 加逐訊號 debug log | **每一個訊號都是 `最近壓力=0.000 最近支撐=0.000`** |
+| 懷疑圖表 vs EA 參數不一致 | 對齊圖表參數（Pivot=10 / Width%=5 / MinStrength=1 / MaxNumSR=6 / Loopback=290 / Source=High/Low）後重跑 |
+| 對齊後 | nearest **仍全為 0.000** |
+
+判讀：
+
+- 淘汰。問題不在 `InpSNRBlockDistanceATR`、也不在參數對齊。
+- 根因：`Support_Resistance_Channels` 的 NearestRes/NearestSup buffer（4/5）在 Strategy Tester 以 `iCustom` 載入時**沒有被填出通道值**（掛在圖表上能畫出通道，但回測環境 buffer 讀到 0），因此 filter 永遠拿到 0 → 永遠放行，等同沒有過濾。
+- 「用指標 buffer 做距離過濾」這條路在回測層面確認行不通。
+- 若未來要重啟此構想，需改為 **EA 內部自行計算 S/R 通道**，不依賴該指標的輸出 buffer。
+- 現狀：`InpUseSNRFilter` 預設維持 `false`，既有 baseline 不受影響；`Indicators/PrecisionSniper_SNR.mq5`（早期 composite 指標）已不被 EA 使用，屬 orphaned。
+
 ## 5. Timeframe 測試
 
 共用設定：
@@ -452,6 +478,7 @@ USDJPY delay stress：
 - D1 作為主策略設定：目前 trades 太少，只能作為觀察候選
 - GBPUSD Candidate B 目前設定。
 - XAUUSD Candidate B 暫不優先，因 PF 接近 1 且 drawdown 較高。
+- PrecisionSniper + SNR 通道距離過濾（見 4.3）：回測環境 iCustom 讀不到指標 nearest buffer，filter 從未生效，淘汰。
 
 ### 核心風險
 

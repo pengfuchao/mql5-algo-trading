@@ -43,6 +43,25 @@
     *   **EA 對接設計**: Buffer `0–4` 會持續填入資料，`ShowEMA` / `ShowSignals` 只控制圖表繪製，不再關閉 EA 可讀取的 buffer。HTF 趨勢過濾在訊號掃描時使用「當下已收盤」的 HTF K 棒，避免低週期歷史訊號讀到尚未完成的大週期 EMA。
     *   **使用限制**: 內建績效統計使用 OHLC bar path 與 R-multiple 進行模擬，不包含 spread、commission、slippage、swap 或真實成交限制；同一根 K 棒同時觸及 SL 與 TP 時採較保守的 SL 優先假設。Dashboard 只統計已結束的模擬交易，最後仍在進行中的交易顯示為 Active，不強制算入 closed-trade stats。因此它適合訊號研究與初步比較，不應取代 MT5 Strategy Tester 或 out-of-sample robustness test。
 
+*   **`PrecisionSniper_SNR.mq5`**
+    *   **功能**: PrecisionSniper + Support/Resistance Channels 的 composite signal filter 指標。
+    *   **核心邏輯**: 先透過 `iCustom` 讀取 `PrecisionSniper.mq5` 的 raw Long/Short 訊號，再讀取 `Support_Resistance_Channels.mq5` 的最近壓力/支撐位，依 ATR-normalized distance 過濾進場位置不佳的訊號。此指標不改寫 PrecisionSniper 原始訊號邏輯，只在下游提供 filtered / blocked 訊號，方便圖表診斷 raw signal 是否被 SNR 擋掉。
+    *   **Filter modes**:
+        *   `SNR_BLOCK_ONLY`: Long 若靠近最近壓力則阻擋；Short 若靠近最近支撐則阻擋。這是第一版較寬鬆的位置品質過濾。
+        *   `SNR_CONFIRMATION`: Long 必須靠近支撐且不能太靠近壓力；Short 必須靠近壓力且不能太靠近支撐。此模式較嚴格，可能大幅降低交易數。
+    *   **Buffer Contract** (保持 `PrecisionSniper` drop-in 的 Buffer `3/4` 語意；`PrecisionSniperEA.mq5` 實際回測路徑已改為 EA 內直接讀 `Support_Resistance_Channels`，避免 Strategy Tester nested indicator handle 失敗):
+        *   Buffer `0`: Raw Buy — PrecisionSniper 原始 Long signal price，否則 `0`。
+        *   Buffer `1`: Raw Sell — PrecisionSniper 原始 Short signal price，否則 `0`。
+        *   Buffer `2`: Nearest Resistance — `Support_Resistance_Channels` 的最近壓力位，否則 `0`。
+        *   Buffer `3`: Filtered Buy — 通過 SNR filter 後的 Long signal price，否則 `0`。
+        *   Buffer `4`: Filtered Sell — 通過 SNR filter 後的 Short signal price，否則 `0`。
+        *   Buffer `5`: Nearest Support — `Support_Resistance_Channels` 的最近支撐位，否則 `0`。
+        *   Buffer `6`: Blocked Buy — 被 SNR filter 阻擋的 raw Long signal price，否則 `0`。
+        *   Buffer `7`: Blocked Sell — 被 SNR filter 阻擋的 raw Short signal price，否則 `0`。
+    *   **`iCustom` 參數順序**: 先傳入 `PrecisionSniper` 的 `Preset, HTF, C_EmaFast, C_EmaSlow, C_EmaTrend, C_RSI, C_ATR, C_MinScore, C_SLMult, TP1_RR, TP2_RR, TP3_RR, SLMult, CooldownBars, UseTrail, StructureSL, SwingLB, GradeFilter, HideCGrade`；再傳入 SNR 的 `SNRPivotPeriod, SNRSourceMode, SNRChannelWidthPct, SNRMinStrength, SNRMaxNumSR, SNRLoopback, SNRChannelWidthMode, SNRATRLen, SNRATRMult, SNRUseVolumeFilter, SNRVolMaLen, SNRVolMult, SNRRetestTolerATR, SNRRetestExpiryBars`；最後傳入 `SNRMode, BlockDistanceATR, ConfirmDistanceATR, ShowRaw, ShowBlocked, ShowLevels`。
+    *   **建議起始設定**: 為避免 S/R 通道過寬、層數過多而把 PrecisionSniper raw 動能訊號全數擋掉，第一輪建議使用 `SNRMode=SNR_BLOCK_ONLY`、`SNRChannelWidthPct=2`、`SNRMaxNumSR=3`、`BlockDistanceATR=0.3`，確認仍有足夠交易樣本後再測 `SNR_CONFIRMATION` 或更大的 ATR 距離。
+    *   **使用限制**: 上游 S/R nearest level 會隨 rolling loopback 與新 pivot 重算，因此歷史 raw/filtered/blocked 顯示箭頭可能因重算而位移；EA 對接時仍應只讀已收盤 K 棒 (`shift = 1`) 的 Buffer `3/4`，但目前建議 EA 端直接套用 SNR filter。`SNR_CONFIRMATION` 可能造成樣本過少，`BlockDistanceATR` / `ConfirmDistanceATR` 對交易數與績效高度敏感，必須用 Strategy Tester 驗證，不能把指標目視效果視為回測結論。
+
 *   **`Support_Resistance_Channels.mq5`**
     *   **功能**: 支撐/壓力「通道」指標 (SRchannel)，由 TradingView Pine Script v6 (© LonesomeTheBlue, MPL-2.0) 移植。
     *   **核心邏輯**: 以 Pivot Period 偵測左右對稱的樞紐高/低點，將彼此距離在「通道最大寬度」內的樞紐分群成通道；通道寬度預設維持近 300 棒振幅 × `ChannelWidthPct`%，也可切換為 closed-bar ATR × `ATRMult`。對每個通道統計 loopback 範圍內觸及的 K 棒數作為強度，挑出最強且互不重疊的數條通道並以矩形繪製。
