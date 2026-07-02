@@ -28,7 +28,7 @@
 
 | # | 項目 | 說明 |
 |---|---|---|
-| 8 | **修 `OnTester` 評分** | 目前 `recovery × PF × √trades` 會偏好「過度交易薄邊際」組（S3 發現）。加 PF 下限 + DD 上限懲罰。**正式再最佳化前應先修。** |
+| 8 | **修 `OnTester` 評分** | **已完成**：加入最低交易數、PF 下限、DD 上限與交易數 boost 上限，避免 `recovery × PF × √trades` 偏好過度交易薄邊際組。後續 optimization 應使用新 Custom criterion。 |
 | 9 | **`ChannelWidthPct` 結構問題** | 在 1–4 完全無效（分群無限鏈接超過 cwidth，S3 發現）。修了 width 才是有意義的可調參數。 |
 
 ## 🔵 另一條獨立方向（不同策略）
@@ -40,7 +40,7 @@
 ## 建議下次的起手式
 
 1. **先測 #1 量過濾**（已建好、直接打假突破、可能同時提升 EURUSD 並回救其他商品）。
-2. 要正式再跑最佳化前，**先修 #8 OnTester**，避免被過度交易組帶歪。
+2. 接著測 #2 `WIDTH_ATR`，與 Range% baseline 做同快照 A/B。
 3. 想要結構升級提升訊號品質 → **#3 HTF confluence**（EA 端、不動指標）。
 
 ## 相關文件

@@ -116,6 +116,13 @@ input int             InpATRPeriod      = 14;            // ATR 週期 (止損�
 input double          InpSLMultiple     = 1.5;           // 止損 = ATR × 此倍數
 input double          InpTPRatio        = 2.0;           // 止盈 = SL 距離 × 此倍數 (RR)，0=不設
 
+//=== 最佳化評分設定 ===
+input group "Optimization"
+input int             InpOptMinTrades        = 30;       // OnTester: minimum trades
+input double          InpOptMinProfitFactor  = 1.20;     // OnTester: reject PF below this
+input double          InpOptMaxDDPercent     = 20.0;     // OnTester: reject equity DD% above this, <=0 disables
+input int             InpOptTradeBoostCap    = 120;      // OnTester: cap sqrt(trades) boost to avoid overtrading bias
+
 //--- 全域
 CTrade   trade;
 int      srHandle  = INVALID_HANDLE;
@@ -346,6 +353,12 @@ int OnInit()
      { Print("InpRetestTolerATR 必須 > 0 (retest 模式)");     return(INIT_PARAMETERS_INCORRECT); }
    if(InpSignalMode == SIG_RETEST && InpRetestExpiryBars < 1)
      { Print("InpRetestExpiryBars 必須 >= 1 (retest 模式)");  return(INIT_PARAMETERS_INCORRECT); }
+   if(InpOptMinTrades < 1)
+     { Print("InpOptMinTrades 必須 >= 1");                    return(INIT_PARAMETERS_INCORRECT); }
+   if(InpOptMinProfitFactor < 1.0)
+     { Print("InpOptMinProfitFactor 必須 >= 1.0");            return(INIT_PARAMETERS_INCORRECT); }
+   if(InpOptTradeBoostCap < 1)
+     { Print("InpOptTradeBoostCap 必須 >= 1");                return(INIT_PARAMETERS_INCORRECT); }
 
    trade.SetExpertMagicNumber(InpMagic);
    trade.SetDeviationInPoints(InpDeviation);
@@ -549,7 +562,7 @@ void OnTick()
   }
 
 //+------------------------------------------------------------------+
-//| 自訂最佳化評分：恢復因子 × 獲利因子 × √交易筆數                  |
+//| 自訂最佳化評分：PF/DD guardrails + capped sample-size boost       |
 //+------------------------------------------------------------------+
 double OnTester()
   {
@@ -559,10 +572,36 @@ double OnTester()
    double recovery     = TesterStatistics(STAT_RECOVERY_FACTOR);
    int    trades       = (int)TesterStatistics(STAT_TRADES);
 
-   if(trades < 30 || netProfit <= 0.0 || ddPercent <= 0.0)
+   int minTrades = MathMax(1, InpOptMinTrades);
+   if(trades < minTrades ||
+      netProfit <= 0.0 ||
+      ddPercent <= 0.0 ||
+      recovery <= 0.0 ||
+      profitFactor <= 0.0 ||
+      !MathIsValidNumber(profitFactor) ||
+      !MathIsValidNumber(recovery))
       return 0.0;
 
-   double score = recovery * profitFactor * MathSqrt((double)trades);
+   double minPF = MathMax(1.0, InpOptMinProfitFactor);
+   if(profitFactor < minPF)
+      return 0.0;
+
+   double maxDD = InpOptMaxDDPercent;
+   if(maxDD > 0.0 && ddPercent > maxDD)
+      return 0.0;
+
+   int tradeCap = MathMax(minTrades, InpOptTradeBoostCap);
+   double tradeBoost = MathSqrt((double)MathMin(trades, tradeCap));
+
+   double ddPenalty = 1.0;
+   if(maxDD > 0.0)
+     {
+      double ddRatio = MathMin(ddPercent / maxDD, 1.0);
+      ddPenalty = 1.0 - 0.5 * ddRatio * ddRatio;
+     }
+
+   double pfEdge = profitFactor - minPF + 1.0;
+   double score = recovery * pfEdge * tradeBoost * ddPenalty;
    if(score < 0.0 || !MathIsValidNumber(score)) score = 0.0;
    return score;
   }

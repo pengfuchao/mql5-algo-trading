@@ -99,6 +99,35 @@ EA：[`Strategies/Strategy_SR_Channel_Breakout.mq5`](../Strategies/Strategy_SR_C
 - **結論：EURUSD 專用 breakout 通過全部回測關卡（全期 + Forward + 高原 + 逐年 + 成本）→ 晉級 demo forward。**
 - 部署卡（寫死最優設置）：[Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md)。
 
+### S8 — 第二階段優化前置：修正 `OnTester` 評分
+
+- 目的：S3 發現舊版 `recovery × PF × √trades` 會偏好「交易很多但 PF 薄、DD 高」的組合，不適合作為後續 `UseVolumeFilter` / `WIDTH_ATR` optimization 排序依據。
+- 變更：`Strategy_SR_Channel_Breakout.mq5` 新增 optimization inputs：
+  - `InpOptMinTrades`
+  - `InpOptMinProfitFactor`
+  - `InpOptMaxDDPercent`
+  - `InpOptTradeBoostCap`
+- 新評分邏輯：先排除交易數不足、非正報酬、PF 低於門檻、DD 超過上限的 pass；通過後用 `recovery × PF edge × capped sqrt(trades) × DD penalty` 排序。
+- 注意：本節只是**優化目標函數修正**，尚未代表任何新策略結果。下一步才是同快照 A/B 測試 `UseVolumeFilter` 與 `WIDTH_ATR`。
+
+#### S8 下一輪測試矩陣（待跑）
+
+固定 baseline：EURUSD H1、2020.06.26–2026.06.26、real ticks、`SIG_BREAKOUT`、CWP=2、MinStr=1、MaxSR=3、Loopback=290、Range%、`UseVolumeFilter=false`、SL1.5、TP2.0、Risk 1%。
+
+1. **Volume filter A/B**
+   - 固定 Range% channel。
+   - `UseVolumeFilter=true`
+   - 掃：`VolMaLen=20`，`VolMult=1.0 / 1.2 / 1.5`
+2. **ATR channel width A/B**
+   - 固定 `UseVolumeFilter=false`。
+   - `ChannelWidthMode=WIDTH_ATR`
+   - 掃：`ATRLen=14`，`ATRMult=0.2 / 0.3 / 0.5 / 0.8`
+3. **Combined test**
+   - 只有當 #1 或 #2 單獨改善時才跑。
+   - 用最佳 volume setting × 最佳 ATR-width setting 做小型交叉，不做大網格。
+
+Pass 條件：同一 tick 快照下，PF 不低於 baseline、DD 不高於 baseline、交易數不低於 50，且成本壓測後仍維持正期望。若只改善 IS、不改善 Forward/OOS，視為 data mining，不晉級。
+
 ## 4. 結論
 
 - **通用策略結案**：Phase 2 retest 假說否定、SR-channel 突破/回測**無跨商品穩健 edge**（GBP 虧、AUD 平、XAU 爆）。最佳版本是裸突破。
@@ -108,7 +137,7 @@ EA：[`Strategies/Strategy_SR_Channel_Breakout.mq5`](../Strategies/Strategy_SR_C
 ## 5. 後續
 
 1. **EURUSD 線 → demo forward**（見部署卡）；統計級確認需 6–12 個月。
-2. （獨立小任務）修正 `OnTester`：加 PF 下限、DD 上限懲罰，避免最佳化偏向過度交易組。
+2. 第二階段優化：先以新 `OnTester` 跑 `UseVolumeFilter` A/B，再跑 `WIDTH_ATR` A/B。
 
 ## 6. 已知無效 / 注意事項
 
