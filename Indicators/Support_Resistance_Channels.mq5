@@ -145,6 +145,71 @@ const string PFXRT  = "SRchan_rt_";    // 回測標記前綴
 //--- 經輸入驗證後的有效參數
 int g_prd, g_chw, g_minstr, g_maxsr, g_loopback, g_atrlen, g_vollen, g_rexp;
 double g_atrmult, g_volmult, g_rtol;
+ENUM_SR_SOURCE g_sourceMode;
+ENUM_SR_WIDTH_MODE g_channelWidthMode;
+bool g_useVolumeFilter;
+int g_volRawBreakouts = 0;
+int g_volPassedBreakouts = 0;
+int g_volBlockedBreakouts = 0;
+int g_volUnavailableBreakouts = 0;
+
+string OverrideBaseKey()
+  {
+   return "MT5SL_SRCH_" + _Symbol + "_" + IntegerToString((int)_Period) + "_";
+  }
+
+bool ReadOverrideNumber(const string prefix, const string name, double &value)
+  {
+   string key = prefix + name;
+   if(!GlobalVariableCheck(key))
+      return false;
+   value = GlobalVariableGet(key);
+   return true;
+  }
+
+void ApplyEAOverrides()
+  {
+   string base = OverrideBaseKey();
+   string activeKey = base + "ACTIVE";
+   if(!GlobalVariableCheck(activeKey))
+      return;
+
+   double active = GlobalVariableGet(activeKey);
+   string prefix = base + IntegerToString((long)active) + "_";
+
+   double stamp = 0.0;
+   if(!ReadOverrideNumber(prefix, "STAMP", stamp))
+      return;
+   if(MathAbs((double)TimeLocal() - stamp) > 300.0)
+      return;
+
+   double v = 0.0;
+   if(ReadOverrideNumber(prefix, "PIVOT", v))     g_prd = (int)MathMax(4, MathMin(30, (int)v));
+   if(ReadOverrideNumber(prefix, "SOURCE", v))    g_sourceMode = (ENUM_SR_SOURCE)(int)v;
+   if(ReadOverrideNumber(prefix, "CWP", v))       g_chw = (int)MathMax(1, MathMin(8, (int)v));
+   if(ReadOverrideNumber(prefix, "MINSTR", v))    g_minstr = (int)MathMax(1, (int)v);
+   if(ReadOverrideNumber(prefix, "MAXSR", v))     g_maxsr = (int)MathMax(1, MathMin(10, (int)v)) - 1;
+   if(ReadOverrideNumber(prefix, "LOOPBACK", v))  g_loopback = (int)MathMax(100, MathMin(400, (int)v));
+   if(ReadOverrideNumber(prefix, "WIDTHMODE", v)) g_channelWidthMode = (ENUM_SR_WIDTH_MODE)(int)v;
+   if(ReadOverrideNumber(prefix, "ATRLEN", v))    g_atrlen = (int)MathMax(1, (int)v);
+   if(ReadOverrideNumber(prefix, "ATRMULT", v))   g_atrmult = MathMax(0.01, v);
+   if(ReadOverrideNumber(prefix, "USEVOL", v))    g_useVolumeFilter = ((int)v != 0);
+   if(ReadOverrideNumber(prefix, "VOLMALEN", v))  g_vollen = (int)MathMax(1, (int)v);
+   if(ReadOverrideNumber(prefix, "VOLMULT", v))   g_volmult = MathMax(0.0, v);
+   if(ReadOverrideNumber(prefix, "RTOL", v))      g_rtol = MathMax(0.0, v);
+   if(ReadOverrideNumber(prefix, "REXP", v))      g_rexp = (int)MathMax(1, (int)v);
+
+   PrintFormat("SRchannel EA override applied: Source=%d CWP=%d MinStr=%d MaxSR=%d Loopback=%d ChannelWidthMode=%d ATRLen=%d ATRMult=%.4f UseVolumeFilter=%s",
+               (int)g_sourceMode,
+               g_chw,
+               g_minstr,
+               g_maxsr + 1,
+               g_loopback,
+               (int)g_channelWidthMode,
+               g_atrlen,
+               g_atrmult,
+               (g_useVolumeFilter ? "true" : "false"));
+  }
 
 //+------------------------------------------------------------------+
 //| 初始化                                                           |
@@ -153,16 +218,34 @@ int OnInit()
   {
 //--- 驗證並夾限輸入 (對齊 Pine minval/maxval)
    g_prd      = (int)MathMax(4,   MathMin(30, PivotPeriod));
+   g_sourceMode = SourceMode;
    g_chw      = (int)MathMax(1,   MathMin(8,  ChannelWidthPct));
    g_minstr   = (int)MathMax(1,   MinStrength);
    g_maxsr    = (int)MathMax(1,   MathMin(10, MaxNumSR)) - 1; // Pine: 輸入值 - 1
    g_loopback = (int)MathMax(100, MathMin(400, Loopback));
+   g_channelWidthMode = ChannelWidthMode;
    g_atrlen   = (int)MathMax(1,   ATRLen);
    g_atrmult  = MathMax(0.01,     ATRMult);   // 下限 0.01：避免 cwidth=0 使通道退化成單點
+   g_useVolumeFilter = UseVolumeFilter;
    g_vollen   = (int)MathMax(1,   VolMaLen);
    g_volmult  = MathMax(0.0,      VolMult);    // 0 等同只擋零量棒，無害，保留
    g_rtol     = MathMax(0.0,      RetestTolerATR);
    g_rexp     = (int)MathMax(1,   RetestExpiryBars);
+   ApplyEAOverrides();
+   g_volRawBreakouts = 0;
+   g_volPassedBreakouts = 0;
+   g_volBlockedBreakouts = 0;
+   g_volUnavailableBreakouts = 0;
+
+   PrintFormat("SRchannel width inputs: ChannelWidthMode=%d ATRLen=%d ATRMult=%.4f ChannelWidthPct=%d",
+               (int)g_channelWidthMode,
+               g_atrlen,
+               g_atrmult,
+               g_chw);
+
+   if(g_useVolumeFilter)
+      PrintFormat("SRchannel volume filter inputs: UseVolumeFilter=true VolMaLen=%d VolMult=%.2f",
+                  g_vollen, g_volmult);
 
    SetIndexBuffer(0, bufMA1,     INDICATOR_DATA);
    SetIndexBuffer(1, bufMA2,     INDICATOR_DATA);
@@ -221,6 +304,14 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
+   if(g_useVolumeFilter)
+      PrintFormat("SRchannel volume filter summary: raw=%d passed=%d blocked=%d unavailable=%d reason=%d",
+                  g_volRawBreakouts,
+                  g_volPassedBreakouts,
+                  g_volBlockedBreakouts,
+                  g_volUnavailableBreakouts,
+                  reason);
+
    if(handleMA1 != INVALID_HANDLE) IndicatorRelease(handleMA1);
    if(handleMA2 != INVALID_HANDLE) IndicatorRelease(handleMA2);
    if(handleATR != INVALID_HANDLE) IndicatorRelease(handleATR);
@@ -324,7 +415,7 @@ void ComputeSR(const datetime &time[],
    ArrayResize(srcL, need);
    for(int i = 0; i < need; i++)
      {
-      if(SourceMode == SRC_HIGHLOW)
+      if(g_sourceMode == SRC_HIGHLOW)
         {
          srcH[i] = high[i];
          srcL[i] = low[i];
@@ -382,7 +473,7 @@ void ComputeSR(const datetime &time[],
    int lidx = ArrayMinimum(low, 1, n300);
    double cwidth = 0.0;
    bool usedRangeWidth = true;
-   if(ChannelWidthMode == WIDTH_ATR)
+   if(g_channelWidthMode == WIDTH_ATR)
      {
       static bool atrWarned = false;   // 僅在真正錯誤時警告一次，避免每根新棒洗版
       double atrVal[1];
@@ -581,7 +672,7 @@ void RedrawPivots(const datetime &time[], const int rates_total)
    for(int i = g_prd + 1; i <= hiBound; i++)   // 與 ComputeSR 一致：自 shift 1 起
      {
       double vh, vl;
-      if(SourceMode == SRC_HIGHLOW)
+      if(g_sourceMode == SRC_HIGHLOW)
         { vh = iHigh(_Symbol, _Period, i); vl = iLow(_Symbol, _Period, i); }
       else
         {
@@ -593,7 +684,7 @@ void RedrawPivots(const datetime &time[], const int rates_total)
         {
          if(k == i) continue;
          double kh, kl;
-         if(SourceMode == SRC_HIGHLOW)
+         if(g_sourceMode == SRC_HIGHLOW)
            { kh = iHigh(_Symbol, _Period, k); kl = iLow(_Symbol, _Period, k); }
          else
            {
@@ -833,18 +924,27 @@ void UpdateSignals(const datetime &time[],
       RegisterFlipLevel(rawSupLevels[i], -1, duplicateTol);
 
    bool resBroken = rawResBroken, supBroken = rawSupBroken;
-   if(UseVolumeFilter && (resBroken || supBroken) && rates_total > g_vollen + 1)
+   if(g_useVolumeFilter && (resBroken || supBroken))
      {
-      double volSum = 0.0;
-      for(int i = 2; i <= g_vollen + 1; i++)
-         volSum += (double)tick_volume[i];
-
-      double avgVol = volSum / (double)g_vollen;
-      if((double)tick_volume[1] <= g_volmult * avgVol)
+      g_volRawBreakouts++;
+      if(rates_total > g_vollen + 1)
         {
-         resBroken = false;
-         supBroken = false;
+         double volSum = 0.0;
+         for(int i = 2; i <= g_vollen + 1; i++)
+            volSum += (double)tick_volume[i];
+
+         double avgVol = volSum / (double)g_vollen;
+         if((double)tick_volume[1] <= g_volmult * avgVol)
+           {
+            resBroken = false;
+            supBroken = false;
+            g_volBlockedBreakouts++;
+           }
+         else
+            g_volPassedBreakouts++;
         }
+      else
+         g_volUnavailableBreakouts++;
      }
 
    bool resBounce = false, supBounce = false;

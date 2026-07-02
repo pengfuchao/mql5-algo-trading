@@ -52,6 +52,7 @@
 // -------------------------------------------------------------------
 #property copyright "Jimmy"
 #property version   "1.00"
+#property tester_indicator "Support_Resistance_Channels.ex5"
 
 #include <Trade\Trade.mqh>
 
@@ -129,6 +130,40 @@ int      srHandle  = INVALID_HANDLE;
 int      atrHandle = INVALID_HANDLE;
 datetime lastBar   = 0;
 ENUM_ACCOUNT_MARGIN_MODE marginMode = ACCOUNT_MARGIN_MODE_RETAIL_HEDGING;
+
+string SROverrideBaseKey()
+  {
+   return "MT5SL_SRCH_" + _Symbol + "_" + IntegerToString((int)_Period) + "_";
+  }
+
+void WriteOverrideNumber(const string prefix, const string name, const double value)
+  {
+   GlobalVariableSet(prefix + name, value);
+  }
+
+void WriteSRIndicatorOverrides()
+  {
+   string base = SROverrideBaseKey();
+   double active = (double)InpMagic;
+   string prefix = base + IntegerToString((long)InpMagic) + "_";
+
+   GlobalVariableSet(base + "ACTIVE", active);
+   WriteOverrideNumber(prefix, "STAMP", (double)TimeLocal());
+   WriteOverrideNumber(prefix, "PIVOT", InpPivotPeriod);
+   WriteOverrideNumber(prefix, "SOURCE", (int)InpSourceMode);
+   WriteOverrideNumber(prefix, "CWP", InpChannelWidthPct);
+   WriteOverrideNumber(prefix, "MINSTR", InpMinStrength);
+   WriteOverrideNumber(prefix, "MAXSR", InpMaxNumSR);
+   WriteOverrideNumber(prefix, "LOOPBACK", InpLoopback);
+   WriteOverrideNumber(prefix, "WIDTHMODE", (int)InpChannelWidthMode);
+   WriteOverrideNumber(prefix, "ATRLEN", InpATRLen);
+   WriteOverrideNumber(prefix, "ATRMULT", InpATRMult);
+   WriteOverrideNumber(prefix, "USEVOL", 0.0); // indicator-side volume gate disabled; EA gates breakout volume
+   WriteOverrideNumber(prefix, "VOLMALEN", InpVolMaLen);
+   WriteOverrideNumber(prefix, "VOLMULT", InpVolMult);
+   WriteOverrideNumber(prefix, "RTOL", InpRetestTolerATR);
+   WriteOverrideNumber(prefix, "REXP", InpRetestExpiryBars);
+  }
 
 //+------------------------------------------------------------------+
 //| 手數正規化                                                       |
@@ -364,18 +399,25 @@ int OnInit()
    trade.SetDeviationInPoints(InpDeviation);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   srHandle = iCustom(_Symbol, _Period, InpIndicatorName,
-                      InpPivotPeriod, InpSourceMode, InpChannelWidthPct,
-                      InpMinStrength, InpMaxNumSR, InpLoopback,
-                      InpChannelWidthMode, InpATRLen, InpATRMult,
-                      InpUseVolumeFilter, InpVolMaLen, InpVolMult,
-                      InpRetestTolerATR, InpRetestExpiryBars);
+   WriteSRIndicatorOverrides();
+   srHandle = iCustom(_Symbol, _Period, InpIndicatorName);
    if(srHandle == INVALID_HANDLE)
      {
       PrintFormat("無法載入指標 '%s' (請確認已編譯且路徑正確), error=%d",
                   InpIndicatorName, GetLastError());
       return(INIT_FAILED);
      }
+   PrintFormat("SR Channel override params: indicator=%s CWP=%d MinStr=%d MaxSR=%d WidthMode=%d ATRLen=%d ATRMult=%.4f IndicatorVolumeFilter=false EAUseVolumeFilter=%s VolMaLen=%d VolMult=%.2f",
+               InpIndicatorName,
+               InpChannelWidthPct,
+               InpMinStrength,
+               InpMaxNumSR,
+               (int)InpChannelWidthMode,
+               InpATRLen,
+               InpATRMult,
+               (InpUseVolumeFilter ? "true" : "false"),
+               InpVolMaLen,
+               InpVolMult);
 
    atrHandle = iATR(_Symbol, _Period, InpATRPeriod);
    if(atrHandle == INVALID_HANDLE)
@@ -407,6 +449,44 @@ void OnDeinit(const int reason)
   }
 
 //+------------------------------------------------------------------+
+//| EA-side relative tick-volume gate for breakout signals            |
+//+------------------------------------------------------------------+
+bool VolumeFilterAllowsBreakout()
+  {
+   if(!InpUseVolumeFilter)
+      return true;
+
+   int len = MathMax(1, InpVolMaLen);
+   long curVol[1];
+   if(CopyTickVolume(_Symbol, _Period, 1, 1, curVol) < 1)
+     {
+      Print("無法讀取已收盤棒 tick volume，volume filter fail closed。");
+      return false;
+     }
+
+   long histVol[];
+   ArrayResize(histVol, len);
+   int copied = CopyTickVolume(_Symbol, _Period, 2, len, histVol);
+   if(copied < len)
+     {
+      PrintFormat("無法讀取 volume MA 視窗 copied=%d need=%d，volume filter fail closed。", copied, len);
+      return false;
+     }
+
+   double sum = 0.0;
+   for(int i = 0; i < len; i++)
+      sum += (double)histVol[i];
+
+   double avgVol = sum / (double)len;
+   double threshold = MathMax(0.0, InpVolMult) * avgVol;
+   bool allowed = ((double)curVol[0] > threshold);
+   if(!allowed && !MQLInfoInteger(MQL_OPTIMIZATION))
+      PrintFormat("Volume filter blocked breakout: tickVol=%I64d avgVol=%.2f threshold=%.2f VolMult=%.2f",
+                  curVol[0], avgVol, threshold, InpVolMult);
+   return allowed;
+  }
+
+//+------------------------------------------------------------------+
 void OnTick()
   {
    // G：偵測候選新 K 棒；資料就緒前不更新 lastBar，暫時失敗時留待同根後續 tick 重試
@@ -433,11 +513,17 @@ void OnTick()
    if(useRetest && CopyBuffer(srHandle, 9, 1, 1, retestSellArr) < 1) return;
    if(CopyBuffer(atrHandle, 0, 1, 1, atrArr) < 1) return;
 
+   bool breakoutBuy  = (resArr[0] > 0.0);         // 壓力向上突破 → 做多
+   bool breakoutSell = (supArr[0] > 0.0);         // 支撐向下跌破 → 做空
+   if((breakoutBuy || breakoutSell) && !VolumeFilterAllowsBreakout())
+     {
+      breakoutBuy = false;
+      breakoutSell = false;
+     }
+
    // 資料齊全 → 本根 K 棒標記為已處理 (即使無訊號或最終不下單，亦不於同根重評估)
    lastBar = curBar[0];
 
-   bool breakoutBuy  = (resArr[0] > 0.0);         // 壓力向上突破 → 做多
-   bool breakoutSell = (supArr[0] > 0.0);         // 支撐向下跌破 → 做空
    bool bounceBuy    = (supBounceArr[0] > 0.0);   // 支撐拒絕 → 做多
    bool bounceSell   = (resBounceArr[0] > 0.0);   // 壓力拒絕 → 做空
    bool retestBuy    = (retestBuyArr[0] > 0.0);    // RBS 回測守住 → 做多
