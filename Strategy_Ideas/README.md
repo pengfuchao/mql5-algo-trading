@@ -34,3 +34,8 @@
 | 外部 SNR 指標想法彙整（6 支 TradingView） | [SNR_External_Ideas_Harvest.md](SNR_External_Ideas_Harvest.md) | Phase 1 A/C 已實作 / 其餘待評估 |
 | SR Channel 指標升級（Phase 2）：SBR/RBS 回測進場 | [SRChannel_Retest_SBR_RBS_Upgrade.md](SRChannel_Retest_SBR_RBS_Upgrade.md) | **已驗證／否定**：跨商品 retest ≤ breakout，策略結案（程式碼保留）|
 | Vegas Tunnel + QQE MOD（趨勢濾清 + 動能觸發） | [Vegas_Tunnel_QQE_MOD.md](Vegas_Tunnel_QQE_MOD.md) | 發想 / 待實作（低期望探索，先驗成本低）|
+| London Breakout（亞洲盤區間突破，GBPUSD M15） | [London_Breakout_Asian_Range.md](London_Breakout_Asian_Range.md) | 發想 / 待實作（外部回測 PF>1.5 於 GBP 系；EURUSD 反證存在）|
+| FX 時段效應（本地時段貶值異象，EURUSD H1） | [FX_TimeOfDay_Effect.md](FX_TimeOfDay_Effect.md) | 發想 / 待實作（**peer-reviewed 論文支持**，零參數；成敗在零售成本）|
+| 黃金日內季節性（亞洲漲/歐美跌，XAUUSD H1） | [Gold_Intraday_Seasonality.md](Gold_Intraday_Seasonality.md) | 發想 / 待實作（30 年紀錄；需先驗證 2014 fix 改制後是否仍存在）|
+| 亞洲時段均值回歸（fade 假突破，M15） | [Asian_Session_Mean_Reversion.md](Asian_Session_Mean_Reversion.md) | 發想 / 待實作（與 London Breakout 共用引擎；證據最弱，證偽即結案）|
+| 週末跳空回補（Weekend Gap Fade，M15 執行） | [Weekend_Gap_Fade.md](Weekend_Gap_Fade.md) | 發想 / **先統計後實作**（統計關不過就不寫 EA）|
