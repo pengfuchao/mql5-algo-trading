@@ -94,3 +94,42 @@
 - [TradingView — Session Liquidity Reversion Strategy（Asia Range False Breakout）](https://www.tradingview.com/script/uHN2BQiV-Session-Liquidity-Reversion-Strategy-Asia-Range-False-Breakout/)
 - [ForexTester — Mean Reversion Trading 指南](https://forextester.com/blog/mean-reversion-trading/)
 - [NewYorkCityServers — Asian Session Forex Strategy](https://newyorkcityservers.com/blog/asian-session-forex-strategy)
+
+---
+
+## 10. 實作規劃（給 Codex 的 spec）
+
+### 前置條件（兩道關，未過不動工）
+
+1. **手算關**：平均 TP 距離 ≥ 4 × 全成本（第 7 節第 3 步）。用 Phase 0 概算：EURUSD 亞洲盤典型區間 ≈ 15–25 pips → TP（中軸）≈ 8–12 pips；若 broker 亞洲時段全成本 > 2–3 pips 直接結案。
+2. **依賴關**：`Strategy_Session_Range.mq5` 的 BREAKOUT 模式已實作並通過驗收（見 [London Breakout 檔 §10](London_Breakout_Asian_Range.md)）。本檔只是該 EA 的 **FADE 模式增量 spec**。
+
+### FADE 模式差異 spec（相對 BREAKOUT）
+
+**新增/改用 Inputs**（僅 `InpMode=MODE_FADE` 時生效；BREAKOUT 模式下這些參數不得影響行為）：
+
+| Input | 預設 | 說明 |
+|---|---|---|
+| `InpFadeRangeEndHour/Min` | 5, 0 | 初始區間終點（≈ London 03:00；區間 = RangeStart 起 3 小時） |
+| `InpFadeTradeEndHour/Min` | 9, 0 | 交易窗口終點（≈ London 07:00，**硬邊界**） |
+| `InpFadeForceCloseHour/Min` | 9, 30 | ≈ London 07:30 清場 |
+| `InpFadeBufferATRMult` | 0.1 | 穿出區間的最小幅度（× ATR(D1)） |
+| `InpFadeSLATRMult` | 0.2 | SL = 突破極值外 × ATR(D1) |
+| `InpFadeTPMode` | MIDLINE | MIDLINE（區間中軸）/ OPPOSITE（對側） |
+| `InpFadeRangeMinATR` / `MaxATR` | 0.15 / 0.5 | 區間高度 ∈ [min,max] × ATR(D1) 才交易 |
+| `InpSkipMondayFade` | true | 週一跳過（gap 污染區間，見第 5 節；**FADE 預設開**，與 BREAKOUT 相反） |
+
+**觸發邏輯**（狀態機同引擎，ARMED 中每根 M15 收盤棒）：
+- 做空：`high[1] ≥ rangeHigh + buffer` **且** `close[1] < rangeHigh`（穿出後收回）→ 開空。
+- 做多：鏡像。
+- 每方向每日最多 1 筆；同棒同時滿足多空（大振幅棒）→ 跳過並 log。
+- SL = `extremum ± InpFadeSLATRMult × ATR(D1)`（extremum = 該觸發棒的 high/low）；TP 依模式；07:30 未觸即市價清場。
+
+**與 BREAKOUT 的回歸隔離**：切換 `InpMode` 只能改變訊號邏輯與時窗，共用件（sizing、量化、點差、magic 以外）不得有模式間串擾。驗收時 BREAKOUT 參數組回歸必須逐筆一致。
+
+### 驗收標準（FADE 增量）
+- 編譯 0/0；EURUSD M15 單月抽查：所有進場都在 05:00–09:00 server 之間；09:30 後無持倉；每筆進場前一棒必有「穿出+收回」形態（人工核對 3 筆）；週一無交易。
+- 與 BREAKOUT 模式對照跑同月：兩模式交易日重疊度 log 出來（理論上 FADE 觸發日多為 BREAKOUT 的 EXPIRED/虧損日）。
+
+### 測試協定
+EURUSD M15 + USDJPY M15，2020.06–2026.06 real ticks，**成本用亞洲時段真實點差**（原始 / ×1.5 / ×2）。固定參數不優化。對照實驗：同期 BREAKOUT 模式日損益相關性（見第 7 節第 4 步）。通過標準見第 9 節；**一輪定生死，不進第二輪**（第 8 節結論）。

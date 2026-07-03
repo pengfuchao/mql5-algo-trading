@@ -92,3 +92,66 @@
 - [QuantifiedStrategies — London Breakout Strategy: Rules and Backtest](https://www.quantifiedstrategies.com/london-breakout-strategy/)
 - [InsiderFinance — Backtest Results Revealed: Is the London Breakout Strategy Worth It?](https://wire.insiderfinance.io/backtest-results-revealed-is-the-london-breakout-strategy-worth-it-0e9df65dd63b)
 - [GitHub — london-strategy-backtest（MT5 整合的開源回測框架，可參考實作）](https://github.com/MHZardary/london-strategy-backtest)
+
+---
+
+## 10. 實作規劃（給 Codex 的 spec）
+
+### 交付物：session 區間引擎 EA（本檔與亞洲盤均值回歸共用）
+
+`Strategies/Strategy_Session_Range.mq5`（+ `.ex5`）。**單一 EA、雙模式**：`InpMode = MODE_BREAKOUT`（本檔）/ `MODE_FADE`（[亞洲盤 MR](Asian_Session_Mean_Reversion.md)，其 spec 只列差異）。
+
+### Inputs
+
+**共用（區間引擎）**：
+
+| Input | 預設 | 說明 |
+|---|---|---|
+| `InpMode` | MODE_BREAKOUT | 策略模式 |
+| `InpRangeStartHour/Min` | 2, 0 | 區間起點（**server time**；EET broker ≈ London 00:00） |
+| `InpRangeEndHour/Min` | 10, 0 | 區間終點（≈ London 08:00）。BREAKOUT 用整段；FADE 只用前段（見該檔） |
+| `InpMaxSpreadPts` | 20 | 進場點差上限 |
+| `InpRiskPercent` / `InpFixedLots` | 0.5 / 0 | 風險%手數，**fail-closed 邏輯整套沿用 `Strategy_SR_Channel_Breakout.mq5`**（tick value/size 無效即不進場、最小手數超風險即跳過） |
+| `InpMagic` | 770030 | FADE 模式建議 770031 |
+| `InpTradeOnFirstBar` | false | 沿用 repo 慣例 |
+
+**BREAKOUT 模式專用**：
+
+| Input | 預設 | 說明 |
+|---|---|---|
+| `InpTradeEndHour/Min` | 13, 0 | 此後不再進新倉（≈ London 11:00） |
+| `InpForceCloseHour/Min` | 19, 0 | 強制平倉（≈ London 17:00） |
+| `InpRangeQualityK` | 0.5 | 區間高度 < K × ATR(D1,14) 才交易 |
+| `InpSLMode` | RANGE_OPPOSITE | RANGE_OPPOSITE / ATR_MULT（`InpSLATRMult`=1.5），取兩者較近 |
+| `InpTPRR` | 1.5 | TP = SL 距離 × RR |
+| `InpMaxLongPerDay` / `InpMaxShortPerDay` | 1 / 1 | 每日多空各最多一筆 |
+
+**時間換算注記**（EA 頂部註解）：時段以 London time 定義，預設值假設 EET/EEST broker（與倫敦常年差 2h）。歐美 DST 錯位週 ±1h 誤差 v1 接受。**所有時間判定用 server time 整數比較，不做 TimeGMT 換算**（tester 的 TimeGMT 不可靠）。
+
+### 核心邏輯（每日狀態機，closed-bar 驅動）
+
+```text
+FORMING（range 窗口內）→ ARMED（窗口結束，range 定案且通過品質過濾）
+→ TRIGGERED / EXPIRED（過 TradeEnd）→ FLAT（ForceClose）
+```
+
+1. 新 M15 收盤棒事件驅動（沿用「僅在指標/資料讀取成功後才標記已處理」的重試慣例；本 EA 無指標，僅 ATR handle）。
+2. FORMING：以 `iHighest/iLowest` 或逐棒累積 range high/low（**只用已收盤棒**）。
+3. 窗口結束 → 品質檢查：`(high−low) < K × ATR(D1)` 否則當日 EXPIRED（log 原因）。
+4. ARMED 中每根收盤棒：`close[1] > rangeHigh` → 開多；`close[1] < rangeLow` → 開空（各受每日上限約束；同棒同時滿足 → 跳過並 log「ambiguous」）。
+5. SL/TP：方向感知量化（照抄 SR Breakout 寫法）；SL=RANGE_OPPOSITE 時若距離 < broker 最低停損距離則改用 ATR_MULT。
+6. ForceClose 時刻：平掉本 magic 全部持倉；週五提前至週五收盤前。
+7. **OnTester**：沿用 `Strategy_SR_Channel_Breakout.mq5` 的自訂評分（min trades / PF 下限 / DD 上限 / trade boost cap），常數同。
+
+### 邊界情況
+- 跨午夜區間（start > end）需支援（本策略用不到，FADE 也用不到，但引擎層面支援，防未來時區改配）。
+- 週開盤日（週日/週一凌晨有 gap）：range 照常形成——**先不特判**，若回測顯示週一勝率異常再開 `InpSkipMonday`。
+- 服務器缺 D1 ATR 資料（tester 起始）→ 當日 EXPIRED，不猜值。
+
+### 驗收標準
+- 編譯 0 error / 0 warning。
+- Tester（GBPUSD M15 單月 real ticks）抽查：range 高低與圖表人工量測一致（3 日）；進場棒必為收盤突破棒的下一 tick；每日 ≤ 2 筆；19:00 後無持倉；EXPIRED 日有品質過濾 log。
+- `InpMode` 切到 FADE 不影響 BREAKOUT 回歸（BREAKOUT 參數組的交易序列前後一致）。
+
+### 測試協定（我審視用）
+GBPUSD M15 主測、USDJPY M15 次測、EURUSD M15 對照（**預期弱**，反了就查 bug），2020.06–2026.06 real ticks；成本：原始 / 開盤時段點差 ×2。固定參數不優化，通過標準見第 9 節。

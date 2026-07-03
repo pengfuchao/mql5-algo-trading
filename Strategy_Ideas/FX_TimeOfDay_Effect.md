@@ -92,3 +92,63 @@
 - [SNB Working Paper 2011-04 全文 PDF](https://www.snb.ch/public/asset/en/www-snb-ch/publications/research/working-papers/2011/working_paper_2011_04/publications0_en/working_paper_2011_04.n.pdf)
 - [Wiley — Journal of Money, Credit and Banking 正式版](https://onlinelibrary.wiley.com/doi/abs/10.1111/jmcb.12032)
 - [QuantRocket — Exploiting Business Day Patterns in FX Markets（含成本的獨立回測）](https://www.quantrocket.com/blog/business-day-fx-patterns/)
+
+---
+
+## 10. 實作規劃（給 Codex 的 spec）
+
+### Phase 0：損益兩平手算（人工，不寫程式，先做）
+
+以 QuantRocket 數據反推毛利：其淨 CAGR 6.2% 是在單邊全成本 ≈ 0.45bp（spread 0.15 + slippage 0.1 + commission 0.2）下算的；每年 2 筆/日 × ~250 日 = 500 筆，年成本 ≈ 500 × 0.45bp ≈ 2.25% → **毛利 ≈ 8.5%/年，即每筆毛 edge ≈ 1.7 pips**。
+
+| 自己 broker 的 EURUSD 單邊全成本（spread+commission 換算） | 判定 |
+|---|---|
+| ≤ 0.8 pip | GO（預期淨年化 ≈ 4%+） |
+| 0.8–1.2 pip | 邊緣（淨 2–4%，看能否配 ECN 帳戶） |
+| ≥ 1.7 pip | KILL（數學上歸零，不寫 EA） |
+
+Phase 0 由使用者查自己帳戶成本後定案，**未 GO 前 Codex 不動工**。
+
+### Phase 1：定時進出引擎 EA（本檔與黃金季節性共用）
+
+**交付物**：`Strategies/Strategy_Time_Window.mq5`（+ 編譯後 `.ex5`）
+
+**架構**：通用「定時進出」EA，支援兩個獨立窗口（本策略用兩個；黃金策略用一個）。無指標、無訊號邏輯——只有時間、點差檢查、災難 SL。
+
+**Inputs**（前綴 `Inp`，沿用 repo 命名慣例）：
+
+| Input | 型別 / 預設 | 說明 |
+|---|---|---|
+| `InpUseWindowA` | bool / true | 窗口 A 開關 |
+| `InpWindowADir` | enum BUY/SELL / SELL | 窗口 A 方向 |
+| `InpWindowAOpenHour` / `Min` | int / 10, 0 | 開倉時刻（**server time**） |
+| `InpWindowACloseHour` / `Min` | int / 18, 0 | 平倉時刻（server time） |
+| `InpUseWindowB`、`InpWindowBDir`(BUY)、`InpWindowBOpenHour`(18)… | 同上 | 窗口 B |
+| `InpFixedLots` | double / 0.01 | v1 固定手數（本策略無有意義 SL 距離，不用風險%手數） |
+| `InpCatastropheATRMult` | double / 2.0 | 災難 SL = 進場價 ∓ ATR(D1,14) × mult |
+| `InpMaxSpreadPts` | double / 15 | 開倉時點差上限；超過則等待，`InpSpreadWaitMin`(30) 分鐘內未回落即放棄當次並記 log |
+| `InpMagic` | long / 770020 | 窗口 B 自動用 `InpMagic+1` |
+
+**預設值換算注記**（寫進 EA 頂部註解）：規則以 NY time 定義（03:00–11:00 空、11:00–16:00 多）；EET/EEST broker（UTC+2/+3，隨歐美 DST）對 NY 的偏移常年 ≈ +7h → server 預設 10:00–18:00 空、18:00–23:00 多。歐美 DST 切換錯位的每年 2–4 週會偏移 1 小時，**v1 接受此誤差**，註解中說明。
+
+**核心邏輯**（OnTick，不需 OnCalculate/指標 handle）：
+1. 每 tick 取 server time；對每個啟用窗口維護「今日已開倉」旗標（以 server date 為鍵）。
+2. 進入開倉時刻且未開倉：檢查點差 → 市價開倉（方向依 input）→ 設災難 SL（依方向量化到 tick size，沿用 `Strategy_SR_Channel_Breakout.mq5` 的方向感知量化寫法）→ 標記已開。
+3. 到達平倉時刻：以 magic 找到本窗口持倉平掉；失敗（retcode 異常）下一 tick 重試並記 log。
+4. 支援跨午夜窗口（close < open 視為跨日）。窗口重疊時兩窗口各自獨立持倉（magic 區分）。
+5. 週五：平倉時刻照常執行；週五收盤前所有窗口強制平倉（防隔週末）。
+6. **不含** OnTester 自訂評分——本策略零參數、禁止優化，不需要。
+
+**邊界情況**：假日/斷線導致錯過開倉時刻 → 若當前時間仍在窗口內且未超過 `InpLateEntryGraceMin`（預設 60 分鐘）仍可補開，否則跳過當日；tester 起始日落在窗口中間 → 跳過該日不補。
+
+**驗收標準**：
+- MetaEditor 編譯 0 error / 0 warning。
+- Tester（EURUSD H1，任一月份，real ticks）log 抽查：每日 ≤ 2 筆、進出時刻與 inputs 一致（±1 分鐘）、無隔夜週末持倉、點差放棄有 log。
+- 災難 SL 存在且正常日不觸發（抽查 10 筆）。
+
+### Phase 2：測試協定（實作完成後，由我審視回測）
+
+- EURUSD H1，2015.01–2026.06，real ticks，初始資金 10000 USD，槓桿 1:100，固定 0.01 lot。
+- 三組成本情境：broker 原始點差 / ×1.5 / ×2（tester 自訂點差）。
+- 產出：年度拆分表 + 淨值曲線 + 2020–2026 子樣本獨立統計，report 命名入 `Strategy_Records/` 慣例。
+- 通過標準見本檔第 9 節。

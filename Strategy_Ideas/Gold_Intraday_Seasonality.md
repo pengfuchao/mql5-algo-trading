@@ -93,3 +93,49 @@
 - [COPI TOOLS — Gold Price Seasonality / XAUUSD 日內異象整理（含 Speck 研究）](https://copi-tools.com/blog/xauusd-anomaly/)
 - [QuantifiedStrategies — Gold Overnight Strategy: Rules & Backtest](https://www.quantifiedstrategies.com/gold-overnight-trading-strategy/)
 - [QuantifiedStrategies — Top Gold Trading Strategies (Backtests)](https://www.quantifiedstrategies.com/gold-trading-strategies/)
+
+---
+
+## 10. 實作規劃（給 Codex 的 spec）
+
+### 前置條件
+
+依賴 `Strategies/Strategy_Time_Window.mq5`（定時進出引擎，spec 見 [FX 時段效應檔 §10 Phase 1](FX_TimeOfDay_Effect.md)）。**本檔不需要新程式**——只是該 EA 的另一組配置 + 一套對照實驗設計。若引擎驗收通過，本策略的「實作」只剩準備 `.set` 檔。
+
+### 配置（XAUUSD 主實驗）
+
+| Input | 值 | 說明 |
+|---|---|---|
+| `InpUseWindowA` | true | 多頭窗口（唯一窗口，第一版不開空頭） |
+| `InpWindowADir` | BUY | |
+| `InpWindowAOpenHour/Min` | 3, 0 | = 00:00 UTC（**夏令 EET+3 時**；冬令偏移 1h，v1 接受，註記在 report） |
+| `InpWindowACloseHour/Min` | 10, 0 | = 07:00 UTC |
+| `InpUseWindowB` | false | 空頭窗口（PM fix）第二階段才開 |
+| `InpFixedLots` | 0.01 | **比 FX 配置小一號的精神**：XAUUSD 0.01 lot 已是最小 |
+| `InpCatastropheATRMult` | 1.5 | 黃金尾部風險較大，SL 較近（vs FX 的 2.0） |
+| `InpMaxSpreadPts` | 依 broker XAUUSD 亞洲時段常態點差 × 1.5 設定 | 開工前先量測 5 個交易日 |
+| `InpMagic` | 770021 | |
+
+### 對照實驗設計（本策略的核心，第 7 節第 2 步的具體化）
+
+主實驗通過「表面正期望」後，**必須**跑以下對照組（同引擎、只改窗口/方向，各自獨立 tester run）：
+
+| Run | 窗口（server, 夏令） | 目的 |
+|---|---|---|
+| MAIN | BUY 03:00–10:00 | 主假說（亞洲時段多頭漂移） |
+| CTRL-1 | BUY 10:00–17:00 | 倫敦上午（假說預期：明顯差於 MAIN） |
+| CTRL-2 | BUY 17:00–24:00 | 美盤（假說預期：差於 MAIN） |
+| CTRL-3 | BUY 全日持有（03:00 開、次日 03:00 平）、手數同 | gold beta 對照：MAIN 的年化/回撤必須優於「持有 beta 的 7/24 等比例」，否則只是搭多頭便車 |
+
+判定：`MAIN 的 Sharpe > CTRL-1、CTRL-2`，且 `MAIN 的報酬/持倉小時 > CTRL-3 的報酬/持倉小時 × 1.5`，效應才算「時段 alpha」。任何一條不成立 → 第 8 節的「只是 gold beta」結論，結案。
+
+### 年度拆分重點（第 7 節第 2 步）
+
+2015–2019（fix 改制後、購金潮前）與 2020–2026 兩段分開報告。**若 alpha 只存在 2022 之後 → 記錄為 beta 假象，結案**；若兩段皆成立才進成本壓測。
+
+### 測試協定
+
+- XAUUSD H1，2015.01–2026.06，real ticks，10000 USD，1:100，0.01 lot。
+- 成本情境：原始 / 亞洲時段點差 ×1.5 / ×2。
+- 產出物：MAIN + 3 CTRL 共 4 份 report（×3 成本情境的 MAIN），依 `Strategy_Records/` 慣例命名；年度拆分表含兩個子期間。
+- 通過標準見第 9 節。空頭窗口（13:00–17:00 UTC 覆蓋 PM fix）**只有 MAIN 全關通過後**才作為獨立假說開 Window B 測試。
