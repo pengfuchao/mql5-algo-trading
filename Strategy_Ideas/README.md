@@ -23,6 +23,10 @@
 8. 可能風險與失效條件
 9. 進入 `Strategy_Records/` 的條件
 
+## 方法論總綱
+
+發想新策略前先讀：[Quant_Strategy_Development_Framework.md](Quant_Strategy_Development_Framework.md) —— 策略按機制/資訊源分類、訊號流水線解剖、指標與過濾器組合原則、想法評估計分卡、組合互補原則，以及 repo 現況在框架中的定位圖。**每個新想法都應該能在該框架裡定位自己（機制、資訊源、正交性、最便宜證偽路徑）。**
+
 ## 目前策略發想
 
 | 策略想法 | 文件 | 狀態 |
