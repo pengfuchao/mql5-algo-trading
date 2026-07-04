@@ -4,11 +4,14 @@ Operational rulebook for AI coding agents working in this repository.
 
 ## Scope
 
-This repository contains MetaTrader 5 programs written in MQL5:
+This repository contains MetaTrader 5 programs written in MQL5, plus the research documentation pipeline around them:
 
 - `Indicators/`: custom indicators and indicator-to-EA interfaces
-- `Strategies/`: Expert Advisors and trading strategies
-- `Utilities/`: standalone examples and legacy utility scripts
+- `Strategies/`: Expert Advisors and trading strategies (see the tier table in its `README.md`: research pipeline vs teaching examples vs excluded-from-research)
+- `Utilities/`: standalone examples and legacy utility scripts (frozen reference library)
+- `Strategy_Ideas/`: strategy hypotheses and evaluation docs. Ideas cleared for implementation carry a **"§10 實作規劃" section — that section is the implementation contract** (deliverables, inputs, logic, edge cases, acceptance checklist) for coding agents. Read the entire idea file before implementing, and `Quant_Strategy_Development_Framework.md` for the methodology it assumes.
+- `Strategy_Records/`: backtest evidence, research decisions, and per-EA behavior/interface documentation (appendix sections).
+- `Strategy_Live_Candidates/`: frozen deployment cards (+ `.set` presets) for strategies that passed all backtest gates. **Never change their parameters or the referenced EA behavior without re-validation through `Strategy_Records/`.**
 
 ## Collaboration and Shared Workspace
 
@@ -94,6 +97,7 @@ If verification cannot be run, explain why and provide the exact command or manu
 ## Documentation
 
 - Keep the relevant directory `README.md` synchronized when adding or materially changing a program.
+- **Single source of truth per item**: each strategy / idea / backlog item keeps its status in exactly one file (its own document). Directory `README.md` tables hold only a one-line pointer and must not duplicate status details that can drift.
 - Document inputs, signal logic, position sizing, exits, risk controls, buffer contracts, and known limitations.
 - Use Traditional Chinese for explanations where practical, while retaining standard English technical terms.
 

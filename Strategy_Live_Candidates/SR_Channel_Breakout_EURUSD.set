@@ -1,0 +1,36 @@
+; SR Channel Breakout — EURUSD H1 deployment preset
+; Source of truth: SR_Channel_Breakout_EURUSD.md (2026-06-30, backtest gates passed)
+; Do NOT modify values without re-validation through Strategy_Records/.
+InpIndicatorName=Support_Resistance_Channels
+InpPivotPeriod=10
+InpSourceMode=0
+InpChannelWidthPct=2
+InpMinStrength=1
+InpMaxNumSR=3
+InpLoopback=290
+InpChannelWidthMode=0
+InpATRLen=14
+InpATRMult=0.3
+InpUseVolumeFilter=false
+InpVolMaLen=20
+InpVolMult=1.0
+InpRetestTolerATR=0.1
+InpRetestExpiryBars=20
+InpSignalMode=0
+InpMagic=770010
+InpDeviation=20
+InpMaxSpreadPts=30.0
+InpCloseOnReverse=true
+InpOnePosition=true
+InpMaxPositions=5
+InpTradeOnFirstBar=false
+InpUseRiskSizing=true
+InpRiskPercent=1.0
+InpFixedLots=0.10
+InpATRPeriod=14
+InpSLMultiple=1.5
+InpTPRatio=2.0
+InpOptMinTrades=30
+InpOptMinProfitFactor=1.20
+InpOptMaxDDPercent=20.0
+InpOptTradeBoostCap=120

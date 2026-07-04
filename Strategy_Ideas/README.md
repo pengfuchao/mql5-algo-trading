@@ -31,7 +31,7 @@
 
 | 策略想法 | 文件 | 狀態 |
 |---|---|---|
-| **SNR 未走完方向（待辦索引）** | [SNR_Open_Threads.md](SNR_Open_Threads.md) | 下次起手式總覽（量過濾待測、OnTester 待修…）|
+| **SNR 未走完方向（待辦索引）** | [SNR_Open_Threads.md](SNR_Open_Threads.md) | 待辦索引（各項狀態以該檔為準）|
 | PrecisionSniper + SNR 位置過濾 | [PrecisionSniper_SNR_Filter.md](PrecisionSniper_SNR_Filter.md) | 優先研究方向 |
 | SR Channel 指標升級：新增反彈訊號 | [SRChannel_Bounce_Signal_Upgrade.md](SRChannel_Bounce_Signal_Upgrade.md) | 已實作 / 待編譯與回測驗證 |
 | SR Channel 指標升級：自適應 Pivot 取樣窗 | [SRChannel_Adaptive_Pivot_Window_Upgrade.md](SRChannel_Adaptive_Pivot_Window_Upgrade.md) | 發想 / 待實作（吸收自 SRv2） |

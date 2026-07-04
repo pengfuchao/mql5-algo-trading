@@ -20,6 +20,8 @@
 
 ## 2. 完整 Input 設置（寫死）
 
+> 可直接載入 preset：[SR_Channel_Breakout_EURUSD.set](SR_Channel_Breakout_EURUSD.set)（內容與下表一致；enum 以整數表示。若 MT5 無法解析，請在終端手動輸入一次後由 MT5 另存覆蓋，並回報格式差異）。
+
 **S/R Indicator**（順序即 iCustom 計算參數順序，務必一致）
 | Input | 值 |
 |---|---|
