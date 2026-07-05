@@ -1,0 +1,28 @@
+; Strategy Session Range - USDJPY Phase 2 sell-only diagnostic preset
+; Tester setup: USDJPY, M15, real ticks. Compare against baseline; do not optimize from this result.
+InpMode=0
+InpRangeStartHour=2
+InpRangeStartMin=0
+InpRangeEndHour=10
+InpRangeEndMin=0
+InpTradeEndHour=13
+InpTradeEndMin=0
+InpForceCloseHour=19
+InpForceCloseMin=0
+InpTradeOnFirstBar=false
+InpMagic=770030
+InpDeviation=20
+InpMaxSpreadPts=20.0
+InpMaxLongPerDay=0
+InpMaxShortPerDay=1
+InpRiskPercent=0.5
+InpFixedLots=0.0
+InpATRPeriod=14
+InpRangeQualityK=0.5
+InpSLMode=0
+InpSLATRMult=1.5
+InpTPRR=1.5
+InpOptMinTrades=30
+InpOptMinProfitFactor=1.20
+InpOptMaxDDPercent=20.0
+InpOptTradeBoostCap=120

@@ -8,6 +8,8 @@
 |---|---|---|
 | **研究管線** | `Strategy_SR_Channel_Breakout.mq5` | EURUSD H1 breakout 晉級 → [部署卡](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md)；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_SR_Channel_Breakout.md) |
 | **研究管線** | `PrecisionSniperEA.mq5` | USDJPY M15 候選，待 demo forward；研究紀錄見 [Strategy_Records](../Strategy_Records/PrecisionSniperEA.md) |
+| **研究管線** | `Strategy_Session_Range.mq5` | London Breakout baseline 已測；GBPUSD/EURUSD 否定，USDJPY M15 保留二輪驗證；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_Session_Range.md) |
+| **研究原型** | `Strategy_Weekend_Gap.mq5` | Weekend Gap Fade demo-forward prototype；M15 short sample 通過但長樣本不足，僅供研究蒐集執行證據，狀態見 [IDEA §10](../Strategy_Ideas/Weekend_Gap_Fade.md#10-實作規劃給-codex-的-spec) |
 | **研究管線（待建紀錄）** | `Strategy_Turtle_Trading.mq5` | 實作完整但無回測紀錄，待補 baseline（建議 XAUUSD/USDJPY H1；出場 A/B 見 [TradingView harvest §2-B](../Strategy_Ideas/TradingView_External_Ideas_Harvest.md)）|
 | **低優先待評估** | `EA_ML_SuperTrend.mq5` | confidence 未校準，先驗低 |
 | **範本** | `Strategy_Template_MT5.mq5` | EA 開發標準範本 |
@@ -57,6 +59,18 @@
     *   **功能**: 自適應機器學習 SuperTrend EA。
     *   **說明**: 對接 `Indicators/ML_SuperTrend.mq5` 的 Buffer `2`、`3`、`4` 取得 Buy、Sell 與 confidence 訊號，並使用已收盤 K 棒執行反轉交易。支援固定手數、ATR stop-distance 風險手數與 confidence 比例手數，搭配 ATR 初始 SL/TP 及 SuperTrend line trailing stop。
     *   **使用限制**: Confidence 是指標的 adaptive score，不是經校準的真實勝率；使用前必須確認 `iCustom` 路徑、參數順序、指標已編譯，並在 Strategy Tester 納入 spread、commission、slippage 與不同市場狀態。
+
+*   **`Strategy_Weekend_Gap.mq5`**
+    *   **功能**: Weekend Gap Fade 研究原型 EA。偵測 M15 週末跳空（週五最後一根 M15 與其後第一根 bar），等待第一根 M15 收盤與 M1 spread calm 條件後，反 gap 方向市價進場。
+    *   **核心邏輯**: 5 pips / 0.3×D1 ATR 下限、1.5×D1 ATR breakaway 上限、週開盤後短窗口內進場、TP 到上週五收盤價或 80% 回補、SL 以 gap 倍數並受 D1 ATR cap 限制、週三 00:00 server time 強平。
+    *   **現況**: Phase 0 只有 2022-06–2026-06 M15 short sample 通過；因長樣本不足與週一開盤回測品質風險，僅用於 demo forward 蒐集 spread、slippage、fill quality 與實際回補證據，**不得視為 live-ready**。完整研究狀態見 [Weekend_Gap_Fade.md](../Strategy_Ideas/Weekend_Gap_Fade.md)。
+
+*   **`Strategy_Session_Range.mq5`**
+    *   **功能**: 時段區間引擎 EA；v1 實作 London Breakout 的 `MODE_BREAKOUT`，保留 `MODE_FADE` 作為亞洲盤均值回歸的後續增量入口。
+    *   **核心邏輯**: 以 server time 建立日內 range（預設 02:00–10:00，對應 EET/EEST broker 的 London 00:00–08:00），只用已收盤 M15 bar 累積 range high/low；range 結束後通過 `range height < K × D1 ATR` 品質 gate 才進入 ARMED，之後以收盤突破 range 上/下緣觸發市價做多/做空。
+    *   **風控與出場**: 支援風險%手數（`InpFixedLots<=0` 時）或固定手數、點差上限、broker StopsLevel/FreezeLevel 檢查、range 對側 / ATR multiplier stop、RR take-profit、每日多空筆數上限、反向持倉未結束時不開新反向倉，以及 force close。
+    *   **現況**: GBPUSD / EURUSD baseline 已否定；USDJPY M15 保留二輪成本壓測與 OOS 驗證，未晉級。
+    *   **使用限制**: 所有時間 input 皆為 broker server time；v1 不做 DST-aware 換算，歐美 DST 錯位週可能偏移 1 小時。`MODE_FADE` 目前 fail-closed，不會交易。策略必須用 real ticks 驗證開盤點差、slippage、commission 與不同年份穩健性，不能直接由想法或單月 smoke test 推論 live readiness。完整結果見 [Strategy_Records/Strategy_Session_Range.md](../Strategy_Records/Strategy_Session_Range.md)。
 
 *   **`Strategy_SR_Channel_Breakout.mq5`**
     *   **功能**: 支撐/壓力通道 EA（透過 `iCustom` 對接 `Indicators/Support_Resistance_Channels.mq5`），支援突破 / 反彈 / SBR-RBS 回測 / 混合四種訊號模式。

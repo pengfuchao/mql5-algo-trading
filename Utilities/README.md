@@ -8,6 +8,9 @@
 
 以下為本資料夾內各個實用工具檔案的功能講解：
 
+### 研究統計腳本 (Research Statistics)
+*   **`Script_Weekend_Gap_Stats.mq5`**: Weekend Gap Fade Phase 0 統計掃描腳本。逐一掃描指定 symbols 的 M15 歷史資料，以週五最後一根 M15 與其後第一根 bar 定義 weekend gap，輸出每週 gap、24/48h 是否回補、bars to fill、MAE 與 ATR(D1) 正規化欄位到 `MQL5/Files/` CSV，並在 Experts log 印 gap-size bucket summary。
+
 ### 訂單與部位管理 (Order & Position Management)
 *   **`Util_Open_Order.mq5`**: 開倉下單的標準封裝工具，簡化 `CTrade` 的調用。
 *   **`Util_Close_Order.mq5`**: 單一訂單平倉工具。

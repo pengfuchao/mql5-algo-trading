@@ -39,8 +39,8 @@
 | 外部 TradingView 高評價指標審視（7 支，2026-07 批次） | [TradingView_External_Ideas_Harvest.md](TradingView_External_Ideas_Harvest.md) | 審視完成：收 Squeeze（setup 閘門）+ Chandelier（出場 A/B）；Lorentzian/N-W/SMC 定案不做 |
 | SR Channel 指標升級（Phase 2）：SBR/RBS 回測進場 | [SRChannel_Retest_SBR_RBS_Upgrade.md](SRChannel_Retest_SBR_RBS_Upgrade.md) | **已驗證／否定**：跨商品 retest ≤ breakout，策略結案（程式碼保留）|
 | Vegas Tunnel + QQE MOD（趨勢濾清 + 動能觸發） | [Vegas_Tunnel_QQE_MOD.md](Vegas_Tunnel_QQE_MOD.md) | 發想 / 待實作（低期望探索，先驗成本低）|
-| London Breakout（亞洲盤區間突破，GBPUSD M15） | [London_Breakout_Asian_Range.md](London_Breakout_Asian_Range.md) | **已附實作 spec（§10）**：`Strategy_Session_Range.mq5` BREAKOUT 模式 |
+| London Breakout（亞洲盤區間突破，GBPUSD M15） | [London_Breakout_Asian_Range.md](London_Breakout_Asian_Range.md) | Baseline 已測：GBPUSD/EURUSD 否定，USDJPY M15 保留二輪驗證；見 [Strategy_Records](../Strategy_Records/Strategy_Session_Range.md) |
 | FX 時段效應（本地時段貶值異象，EURUSD H1） | [FX_TimeOfDay_Effect.md](FX_TimeOfDay_Effect.md) | **已附實作 spec（§10）**：Phase 0 手算關 → `Strategy_Time_Window.mq5` |
 | 黃金日內季節性（亞洲漲/歐美跌，XAUUSD H1） | [Gold_Intraday_Seasonality.md](Gold_Intraday_Seasonality.md) | **已附實作 spec（§10）**：復用 Time_Window 引擎 + 對照實驗設計 |
 | 亞洲時段均值回歸（fade 假突破，M15） | [Asian_Session_Mean_Reversion.md](Asian_Session_Mean_Reversion.md) | **已附實作 spec（§10）**：Session_Range 引擎 FADE 模式增量（依賴 BREAKOUT 先完成）|
-| 週末跳空回補（Weekend Gap Fade，M15 執行） | [Weekend_Gap_Fade.md](Weekend_Gap_Fade.md) | **已附實作 spec（§10）**：Phase 0 統計腳本先行（統計關不過就不寫 EA）|
+| 週末跳空回補（Weekend Gap Fade，M15 執行） | [Weekend_Gap_Fade.md](Weekend_Gap_Fade.md) | Short-sample pass；已進 research prototype / demo-forward only，最新狀態以 IDEA §10 為準 |
