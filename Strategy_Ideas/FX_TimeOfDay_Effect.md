@@ -2,7 +2,7 @@
 
 建立日期：2026-07-04
 
-狀態：策略發想 / 待實作（**有正式學術文獻支持**，repo 目前唯一有 peer-reviewed 依據的候選）
+狀態：實作前閱讀已完成；Phase 0 仍待 broker EURUSD 單邊全成本 GO/NO-GO，未 GO 前不寫 EA（**有正式學術文獻支持**，repo 目前唯一有 peer-reviewed 依據的候選）
 
 ## 1. 核心想法
 
@@ -97,6 +97,8 @@
 
 ## 10. 實作規劃（給 Codex 的 spec）
 
+**目前進度（2026-07-06）**：已完成實作前閱讀。`Strategy_Time_Window.mq5` 尚不存在；已新增並編譯通過 `Utilities/Script_FX_TimeOfDay_Cost_Check.mq5`（0 errors / 0 warnings）供 Phase 0 成本關卡使用。若 Phase 0 成本檢查 GO，Phase 1 會先實作共用定時進出引擎，後續 Gold Intraday Seasonality 直接復用同一 EA。
+
 ### Phase 0：損益兩平手算（人工，不寫程式，先做）
 
 以 QuantRocket 數據反推毛利：其淨 CAGR 6.2% 是在單邊全成本 ≈ 0.45bp（spread 0.15 + slippage 0.1 + commission 0.2）下算的；每年 2 筆/日 × ~250 日 = 500 筆，年成本 ≈ 500 × 0.45bp ≈ 2.25% → **毛利 ≈ 8.5%/年，即每筆毛 edge ≈ 1.7 pips**。
@@ -108,6 +110,24 @@
 | ≥ 1.7 pip | KILL（數學上歸零，不寫 EA） |
 
 Phase 0 由使用者查自己帳戶成本後定案，**未 GO 前 Codex 不動工**。
+
+**Phase 0 執行工具（2026-07-06 新增）**：`Utilities/Script_FX_TimeOfDay_Cost_Check.mq5`。
+
+使用方式：
+
+1. 在 MT5 將腳本掛到 EURUSD 圖表，或把 `InpSymbol` 設為實際 broker symbol（例如 `EURUSD`、`EURUSD.a`）。
+2. `InpCommissionPerLotRoundTurn` 輸入 1.0 lot 來回 commission（帳戶貨幣）。若帳戶顯示每邊 3.5 USD / lot，這裡填 `7.0`。
+3. `InpExpectedSlippagePipsRoundTurn` 先用保守值 `0.2`；若 demo forward 顯示滑價較高，再提高。
+4. 腳本會抽樣 bid/ask spread，輸出：
+   - `roundturn_cost_pips = spread_avg_pips + commission_roundturn_pips + slippage_roundturn_pips`
+   - `one_side_equivalent_cost_pips = roundturn_cost_pips / 2`
+5. Phase 0 判定以 `one_side_equivalent_cost_pips` 為準：`<= 0.8` GO、`0.8–1.2` borderline、`>= 1.7` KILL。
+
+注意：spread 應在策略實際進場附近抽樣（NY 03:00 / 11:00、server 對應時間），不要只在流動性最好的任意時間抽樣；至少跑三次並保留 CSV，避免單一時點低估成本。
+
+**Phase 0 初步結果（2026-07-06 17:45:53 server）**：EURUSD，30 samples，`spread_avg_pips=0.037`、`spread_median_pips=0.000`、`spread_max_pips=0.100`、`commission_roundturn_pips=0.000`、`slippage_roundturn_pips=0.200`，`roundturn_cost_pips=0.237`、`one_side_equivalent_cost_pips=0.118`，判定 `GO`。
+
+判讀：此筆樣本接近 server 18:00 window，成本遠低於 `0.8 pip` GO 門檻；但因 commission input 為 `0`，仍需確認實際帳戶是否為 zero commission。若補入常見 `7 USD / lot round-turn`（EURUSD pip value 約 `10 USD / pip / lot`），one-side equivalent cost 約 `(0.037 + 0.700 + 0.200) / 2 = 0.469 pip`，仍屬 GO；若 round-turn commission 達 `14 USD / lot`，則約 `0.819 pip`，會落入 borderline。下一步建議在 server 10:00 window 附近再跑一次，若仍 `<= 0.8 pip`，Phase 0 可視為正式 GO，進入 Phase 1 EA。
 
 ### Phase 1：定時進出引擎 EA（本檔與黃金季節性共用）
 

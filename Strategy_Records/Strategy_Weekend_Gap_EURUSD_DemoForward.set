@@ -1,0 +1,21 @@
+; Strategy Weekend Gap - EURUSD demo-forward research preset
+; Status: research / demo-forward evidence collection only; not a live candidate.
+; Tester basis: MetaQuotes-Demo M15 2022.06.27-2026.06.30, InpMinGapATRMult=0.3, PF 1.43, 21 trades.
+InpMinGapPips=5.0
+InpMinGapATRMult=0.3
+InpMaxGapATRMult=1.5
+InpEntryDelayBars=1
+InpEntryWindowMins=60
+InpATRPeriod=14
+InpMagic=770040
+InpDeviation=20
+InpMaxSpreadPts=20.0
+InpSpreadCalmBars=3
+InpFixedLots=0.01
+InpRiskPercent=0.0
+InpTPMode=0
+InpSLGapMult=1.0
+InpSLATRMult=1.0
+InpForceCloseDay=3
+InpForceCloseHour=0
+InpForceCloseMinute=0
