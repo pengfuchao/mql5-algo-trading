@@ -97,7 +97,7 @@
 
 ## 10. 實作規劃（給 Codex 的 spec）
 
-**目前進度（2026-07-06）**：已完成實作前閱讀。`Strategy_Time_Window.mq5` 尚不存在；已新增並編譯通過 `Utilities/Script_FX_TimeOfDay_Cost_Check.mq5`（0 errors / 0 warnings）供 Phase 0 成本關卡使用。若 Phase 0 成本檢查 GO，Phase 1 會先實作共用定時進出引擎，後續 Gold Intraday Seasonality 直接復用同一 EA。
+**目前進度（2026-07-06）**：已完成實作前閱讀。已新增並編譯通過 `Utilities/Script_FX_TimeOfDay_Cost_Check.mq5`（0 errors / 0 warnings）供 Phase 0 成本關卡使用；server 18:00 window 初步成本樣本為 `GO`，仍待 server 10:00 window 補樣本。`Strategies/Strategy_Time_Window.mq5` 已完成 conditional Phase 1 實作並編譯通過（0 errors / 0 warnings），後續 Gold Intraday Seasonality 直接復用同一 EA。
 
 ### Phase 0：損益兩平手算（人工，不寫程式，先做）
 
