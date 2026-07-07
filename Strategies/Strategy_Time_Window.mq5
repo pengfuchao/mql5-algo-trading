@@ -372,6 +372,16 @@ bool EntriesBlockedByWeekend(const datetime now)
    return false;
   }
 
+bool FridayWindowWouldCrossGuard(const datetime openTime, const datetime closeTime)
+  {
+   if(DayOfWeek(openTime) != 5)
+      return false;
+
+   datetime fridayForceClose = MidnightOf(openTime) +
+                               MakeMinute(InpFridayForceCloseHour, InpFridayForceCloseMin) * 60;
+   return (closeTime >= fridayForceClose);
+  }
+
 double LatestD1ATR()
   {
    if(atrD1Handle == INVALID_HANDLE)
@@ -536,6 +546,17 @@ void EvaluateWindow(const WindowConfig &cfg, WindowState &state, const datetime 
 
    if(state.initialSkipKey == key || state.skippedKey == key || state.lastOpenKey == key)
       return;
+
+   if(FridayWindowWouldCrossGuard(openTime, closeTime))
+     {
+      state.skippedKey = key;
+      PrintFormat("%s skipped key=%d: Friday close %s is at/after force-close %s, preventing weekend hold",
+                  cfg.label, key,
+                  TimeToString(closeTime, TIME_DATE|TIME_MINUTES),
+                  TimeToString(MidnightOf(openTime) + MakeMinute(InpFridayForceCloseHour, InpFridayForceCloseMin) * 60,
+                               TIME_DATE|TIME_MINUTES));
+      return;
+     }
 
    int lateGrace = MathMax(0, InpLateEntryGraceMin);
    int spreadWait = MathMax(0, InpSpreadWaitMin);
