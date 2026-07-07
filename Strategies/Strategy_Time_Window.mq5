@@ -355,13 +355,11 @@ bool IsWindowCloseDue(const WindowConfig &cfg, const datetime now)
    datetime openTime = 0;
    datetime closeTime = 0;
    SessionTimes(cfg, now, openTime, closeTime);
-   if(now >= closeTime)
-      return true;
-
-   datetime prevOpenTime = 0;
-   datetime prevCloseTime = 0;
-   SessionTimes(cfg, now - 86400, prevOpenTime, prevCloseTime);
-   return (now >= prevCloseTime);
+   // A managed position should be held only while now is inside the active
+   // [openTime, closeTime) window (SessionTimes already resolves cross-midnight
+   // windows). Any other time -- past the close, or a stale position surviving
+   // from a prior session before today's open -- is due to be closed.
+   return !(now >= openTime && now < closeTime);
   }
 
 bool EntriesBlockedByWeekend(const datetime now)

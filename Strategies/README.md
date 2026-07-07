@@ -9,7 +9,7 @@
 | **研究管線** | `Strategy_SR_Channel_Breakout.mq5` | EURUSD H1 breakout 晉級 → [部署卡](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md)；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_SR_Channel_Breakout.md) |
 | **研究管線** | `PrecisionSniperEA.mq5` | USDJPY M15 候選，待 demo forward；研究紀錄見 [Strategy_Records](../Strategy_Records/PrecisionSniperEA.md) |
 | **研究管線** | `Strategy_Session_Range.mq5` | London Breakout baseline 已測；GBPUSD/EURUSD 否定，USDJPY M15 保留二輪驗證；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_Session_Range.md) |
-| **研究原型** | `Strategy_Time_Window.mq5` | FX Time-of-Day / Gold Intraday Seasonality 共用定時進出引擎；conditional Phase 1 已實作並編譯通過，待第二筆 Phase 0 成本樣本與 smoke test，狀態見 [IDEA §10](../Strategy_Ideas/FX_TimeOfDay_Effect.md#10-實作規劃給-codex-的-spec) |
+| **研究原型** | `Strategy_Time_Window.mq5` | FX Time-of-Day / Gold Intraday Seasonality 共用定時進出引擎；Phase 0 broker cost gate 已 GO，conditional Phase 1 已實作並編譯通過，待 smoke test / formal backtest，狀態見 [IDEA §10](../Strategy_Ideas/FX_TimeOfDay_Effect.md#10-實作規劃給-codex-的-spec) |
 | **研究原型** | `Strategy_Weekend_Gap.mq5` | Weekend Gap Fade demo-forward prototype；M15 short sample 通過但長樣本不足，僅供研究蒐集執行證據，狀態見 [IDEA §10](../Strategy_Ideas/Weekend_Gap_Fade.md#10-實作規劃給-codex-的-spec) |
 | **研究管線（待建紀錄）** | `Strategy_Turtle_Trading.mq5` | 實作完整但無回測紀錄，待補 baseline（建議 XAUUSD/USDJPY H1；出場 A/B 見 [TradingView harvest §2-B](../Strategy_Ideas/TradingView_External_Ideas_Harvest.md)）|
 | **低優先待評估** | `EA_ML_SuperTrend.mq5` | confidence 未校準，先驗低 |
@@ -76,7 +76,7 @@
 *   **`Strategy_Time_Window.mq5`**
     *   **功能**: 共用定時進出 EA，第一版服務 FX Time-of-Day Effect，後續可由 Gold Intraday Seasonality 復用。沒有價格訊號與技術指標 filter，只依 broker server time 定時開倉、定時平倉。
     *   **核心邏輯**: 支援兩個獨立 window；預設 Window A 為 server 10:00–18:00 SELL，Window B 為 18:00–23:00 BUY；Window A 使用 `InpMagic`，Window B 使用 `InpMagic+1`。進場前只檢查 spread cap、late-entry grace、固定手數、交易權限、保證金、netting ownership；出場以 window close time 為主，週五 force close 防隔週末。
-    *   **風控與限制**: 使用 D1 ATR catastrophe SL，正常日不應觸發；所有時間 input 都是 server time，v1 接受歐美 DST 錯位週 1 小時偏移。FX Phase 0 目前只有 server 18:00 window 初步 GO，仍待 server 10:00 window 成本樣本；EA 已編譯通過但仍是 conditional research prototype，不得視為 live-ready。
+    *   **風控與限制**: 使用 D1 ATR catastrophe SL，正常日不應觸發；所有時間 input 都是 server time，v1 接受歐美 DST 錯位週 1 小時偏移。FX Phase 0 broker cost gate 已通過；EA 已編譯通過但仍是 conditional research prototype，尚需 smoke test 與正式 2015–2026 回測，不得視為 live-ready。
 
 *   **`Strategy_SR_Channel_Breakout.mq5`**
     *   **功能**: 支撐/壓力通道 EA（透過 `iCustom` 對接 `Indicators/Support_Resistance_Channels.mq5`），支援突破 / 反彈 / SBR-RBS 回測 / 混合四種訊號模式。
