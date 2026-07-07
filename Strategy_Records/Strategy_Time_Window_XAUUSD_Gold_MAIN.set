@@ -1,0 +1,28 @@
+; Strategy Time Window - XAUUSD Gold Intraday Seasonality MAIN preset
+; Status: research baseline only; not a live/demo candidate.
+; Tester setup: XAUUSD, H1, real ticks, 2015.01.01-2026.06.30.
+; Hypothesis: Asia-session gold drift, BUY 03:00-10:00 server time under EET/EEST summer mapping (00:00-07:00 UTC).
+; Before formal gate, calibrate InpMaxSpreadPts from 5 trading days of XAUUSD Asia-session spread samples.
+InpUseWindowA=true
+InpWindowADir=0
+InpWindowAOpenHour=3
+InpWindowAOpenMin=0
+InpWindowACloseHour=10
+InpWindowACloseMin=0
+InpUseWindowB=false
+InpWindowBDir=0
+InpWindowBOpenHour=18
+InpWindowBOpenMin=0
+InpWindowBCloseHour=23
+InpWindowBCloseMin=0
+InpMagic=770021
+InpDeviation=20
+InpMaxSpreadPts=300.0
+InpSpreadWaitMin=30
+InpLateEntryGraceMin=60
+InpAllowFullDayWindow=false
+InpFixedLots=0.01
+InpATRPeriod=14
+InpCatastropheATRMult=1.5
+InpFridayForceCloseHour=23
+InpFridayForceCloseMin=0

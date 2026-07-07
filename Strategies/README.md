@@ -9,7 +9,7 @@
 | **研究管線** | `Strategy_SR_Channel_Breakout.mq5` | EURUSD H1 breakout 晉級 → [部署卡](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md)；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_SR_Channel_Breakout.md) |
 | **研究管線** | `PrecisionSniperEA.mq5` | USDJPY M15 候選，待 demo forward；研究紀錄見 [Strategy_Records](../Strategy_Records/PrecisionSniperEA.md) |
 | **研究管線** | `Strategy_Session_Range.mq5` | London Breakout baseline 已測；GBPUSD/EURUSD 否定，USDJPY M15 保留二輪驗證；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_Session_Range.md) |
-| **研究原型** | `Strategy_Time_Window.mq5` | FX Time-of-Day / Gold Intraday Seasonality 共用定時進出引擎；FX EURUSD Phase 1 baseline 未通過，EA 保留作為純時間型研究引擎，狀態見 [IDEA §10](../Strategy_Ideas/FX_TimeOfDay_Effect.md#10-實作規劃給-codex-的-spec) |
+| **研究原型** | `Strategy_Time_Window.mq5` | FX Time-of-Day / Gold Intraday Seasonality 共用定時進出引擎；FX EURUSD Phase 1 baseline 未通過，Gold research presets 已建立，EA 保留作為純時間型研究引擎，狀態見 [FX IDEA §10](../Strategy_Ideas/FX_TimeOfDay_Effect.md#10-實作規劃給-codex-的-spec) / [Gold IDEA §10](../Strategy_Ideas/Gold_Intraday_Seasonality.md#10-實作規劃給-codex-的-spec) |
 | **研究原型** | `Strategy_Weekend_Gap.mq5` | Weekend Gap Fade demo-forward prototype；M15 short sample 通過但長樣本不足，僅供研究蒐集執行證據，狀態見 [IDEA §10](../Strategy_Ideas/Weekend_Gap_Fade.md#10-實作規劃給-codex-的-spec) |
 | **研究管線（待建紀錄）** | `Strategy_Turtle_Trading.mq5` | 實作完整但無回測紀錄，待補 baseline（建議 XAUUSD/USDJPY H1；出場 A/B 見 [TradingView harvest §2-B](../Strategy_Ideas/TradingView_External_Ideas_Harvest.md)）|
 | **低優先待評估** | `EA_ML_SuperTrend.mq5` | confidence 未校準，先驗低 |
@@ -75,8 +75,8 @@
 
 *   **`Strategy_Time_Window.mq5`**
     *   **功能**: 共用定時進出 EA，第一版服務 FX Time-of-Day Effect，後續可由 Gold Intraday Seasonality 復用。沒有價格訊號與技術指標 filter，只依 broker server time 定時開倉、定時平倉。
-    *   **核心邏輯**: 支援兩個獨立 window；預設 Window A 為 server 10:00–18:00 SELL，Window B 為 18:00–23:00 BUY；Window A 使用 `InpMagic`，Window B 使用 `InpMagic+1`。進場前只檢查 spread cap、late-entry grace、固定手數、交易權限、保證金、netting ownership；出場以 window close time 為主，週五 force close 防隔週末。Friday window 若預定 close time 等於或晚於 force-close time，會直接 skip，避免週五尾盤缺 tick 時跨週末持倉。
-    *   **風控與限制**: 使用 D1 ATR catastrophe SL，正常日不應觸發；所有時間 input 都是 server time，v1 接受歐美 DST 錯位週 1 小時偏移。FX Phase 0 broker cost gate 已通過，但 EURUSD 2020–2026 baseline 轉負，FX idea 不進 live/demo candidate；EA 保留作為 Gold Intraday Seasonality 等純時間型研究的共用引擎。
+    *   **核心邏輯**: 支援兩個獨立 window；預設 Window A 為 server 10:00–18:00 SELL，Window B 為 18:00–23:00 BUY；Window A 使用 `InpMagic`，Window B 使用 `InpMagic+1`。進場前只檢查 spread cap、late-entry grace、固定手數、交易權限、保證金、netting ownership；出場以 window close time 為主，週五 force close 防隔週末。Friday window 若預定 close time 等於或晚於 force-close time，會直接 skip，避免週五尾盤缺 tick 時跨週末持倉。`InpAllowFullDayWindow` 預設關閉；開啟後 open time = close time 代表 24h research window，供 Gold CTRL-3 beta control 使用。
+    *   **風控與限制**: 使用 D1 ATR catastrophe SL，正常日不應觸發；所有時間 input 都是 server time，v1 接受 DST 錯位週 1 小時偏移。FX Phase 0 broker cost gate 已通過，但 EURUSD 2020–2026 baseline 轉負，FX idea 不進 live/demo candidate；Gold Intraday Seasonality MAIN/CTRL presets 已建立，待 XAUUSD H1 formal backtest。
 
 *   **`Strategy_SR_Channel_Breakout.mq5`**
     *   **功能**: 支撐/壓力通道 EA（透過 `iCustom` 對接 `Indicators/Support_Resistance_Channels.mq5`），支援突破 / 反彈 / SBR-RBS 回測 / 混合四種訊號模式。

@@ -1,0 +1,28 @@
+; Strategy Time Window - XAUUSD Gold Intraday Seasonality CTRL-3 preset
+; Status: research control only; not a live/demo candidate.
+; Control: BUY 03:00-next-day 03:00 server time, gold beta control.
+; InpAllowFullDayWindow=true is required because open==close means a 24h window in this EA.
+; Friday entries are skipped by the EA weekend guard because this window would cross Friday force-close.
+InpUseWindowA=true
+InpWindowADir=0
+InpWindowAOpenHour=3
+InpWindowAOpenMin=0
+InpWindowACloseHour=3
+InpWindowACloseMin=0
+InpUseWindowB=false
+InpWindowBDir=0
+InpWindowBOpenHour=18
+InpWindowBOpenMin=0
+InpWindowBCloseHour=23
+InpWindowBCloseMin=0
+InpMagic=770024
+InpDeviation=20
+InpMaxSpreadPts=300.0
+InpSpreadWaitMin=30
+InpLateEntryGraceMin=60
+InpAllowFullDayWindow=true
+InpFixedLots=0.01
+InpATRPeriod=14
+InpCatastropheATRMult=1.5
+InpFridayForceCloseHour=23
+InpFridayForceCloseMin=0

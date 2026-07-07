@@ -68,6 +68,7 @@ input ulong                InpDeviation          = 20;     // Max slippage in po
 input double               InpMaxSpreadPts       = 15.0;   // Entry spread cap in points; <=0 disables
 input int                  InpSpreadWaitMin      = 30;     // Max minutes after scheduled open to wait for spread
 input int                  InpLateEntryGraceMin  = 60;     // Max minutes after scheduled open to allow late entry
+input bool                 InpAllowFullDayWindow = false;  // Allow open==close as a 24h research window
 
 //=== Sizing and risk ===
 input group "Sizing & Risk"
@@ -634,7 +635,8 @@ bool ValidWindow(const string label,
                  const int openHour,
                  const int openMin,
                  const int closeHour,
-                 const int closeMin)
+                 const int closeMin,
+                 const bool allowFullDay)
   {
    if(!enabled)
       return true;
@@ -647,8 +649,12 @@ bool ValidWindow(const string label,
 
    if(MakeMinute(openHour, openMin) == MakeMinute(closeHour, closeMin))
      {
-      PrintFormat("%s open and close cannot be the same time.", label);
-      return false;
+      if(!allowFullDay)
+        {
+         PrintFormat("%s open and close cannot be the same time unless InpAllowFullDayWindow=true.", label);
+         return false;
+        }
+      PrintFormat("%s open and close are equal; treating this as a 24h research window.", label);
      }
    return true;
   }
@@ -663,9 +669,9 @@ int OnInit()
      }
 
    if(!ValidWindow("Window A", InpUseWindowA, InpWindowAOpenHour, InpWindowAOpenMin,
-                   InpWindowACloseHour, InpWindowACloseMin) ||
+                   InpWindowACloseHour, InpWindowACloseMin, InpAllowFullDayWindow) ||
       !ValidWindow("Window B", InpUseWindowB, InpWindowBOpenHour, InpWindowBOpenMin,
-                   InpWindowBCloseHour, InpWindowBCloseMin))
+                   InpWindowBCloseHour, InpWindowBCloseMin, InpAllowFullDayWindow))
       return INIT_PARAMETERS_INCORRECT;
 
    if(!ValidTime(InpFridayForceCloseHour, InpFridayForceCloseMin))

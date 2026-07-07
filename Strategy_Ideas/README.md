@@ -41,6 +41,6 @@
 | Vegas Tunnel + QQE MOD（趨勢濾清 + 動能觸發） | [Vegas_Tunnel_QQE_MOD.md](Vegas_Tunnel_QQE_MOD.md) | 發想 / 待實作（低期望探索，先驗成本低）|
 | London Breakout（亞洲盤區間突破，GBPUSD M15） | [London_Breakout_Asian_Range.md](London_Breakout_Asian_Range.md) | Baseline 已測：GBPUSD/EURUSD 否定，USDJPY M15 保留二輪驗證；見 [Strategy_Records](../Strategy_Records/Strategy_Session_Range.md) |
 | FX 時段效應（本地時段貶值異象，EURUSD H1） | [FX_TimeOfDay_Effect.md](FX_TimeOfDay_Effect.md) | **已附實作 spec（§10）**：Phase 0 手算關 → `Strategy_Time_Window.mq5` |
-| 黃金日內季節性（亞洲漲/歐美跌，XAUUSD H1） | [Gold_Intraday_Seasonality.md](Gold_Intraday_Seasonality.md) | **已附實作 spec（§10）**：復用 Time_Window 引擎 + 對照實驗設計 |
+| 黃金日內季節性（亞洲漲/歐美跌，XAUUSD H1） | [Gold_Intraday_Seasonality.md](Gold_Intraday_Seasonality.md) | Phase 1 research presets 已建立：復用 Time_Window 引擎 + MAIN/CTRL 對照實驗 |
 | 亞洲時段均值回歸（fade 假突破，M15） | [Asian_Session_Mean_Reversion.md](Asian_Session_Mean_Reversion.md) | **已附實作 spec（§10）**：Session_Range 引擎 FADE 模式增量（依賴 BREAKOUT 先完成）|
 | 週末跳空回補（Weekend Gap Fade，M15 執行） | [Weekend_Gap_Fade.md](Weekend_Gap_Fade.md) | Short-sample pass；已進 research prototype / demo-forward only，最新狀態以 IDEA §10 為準 |

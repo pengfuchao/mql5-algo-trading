@@ -2,7 +2,7 @@
 
 建立日期：2026-07-04
 
-狀態：策略發想 / 待實作（長期統計紀錄支持，但需先驗證近年是否仍存在）
+狀態：Phase 1 research presets 已建立，待 XAUUSD H1 MAIN + controls 正式回測（長期統計紀錄支持，但需先驗證近年是否仍存在）
 
 ## 1. 核心想法
 
@@ -98,6 +98,8 @@
 
 ## 10. 實作規劃（給 Codex 的 spec）
 
+**目前進度（2026-07-08）**：已確認不另寫新 EA，復用 `Strategies/Strategy_Time_Window.mq5`。為支援 CTRL-3「03:00 開、次日 03:00 平」的 24h gold beta control，EA 新增 `InpAllowFullDayWindow` opt-in；預設關閉，不影響 FX Time-of-Day 或一般日內 window。已建立 MAIN + CTRL-1/2/3 四組 research `.set` preset，下一步是 Strategy Tester 跑 XAUUSD H1 formal backtest。
+
 ### 前置條件
 
 依賴 `Strategies/Strategy_Time_Window.mq5`（定時進出引擎，spec 見 [FX 時段效應檔 §10 Phase 1](FX_TimeOfDay_Effect.md)）。**本檔不需要新程式**——只是該 EA 的另一組配置 + 一套對照實驗設計。若引擎驗收通過，本策略的「實作」只剩準備 `.set` 檔。
@@ -113,8 +115,20 @@
 | `InpUseWindowB` | false | 空頭窗口（PM fix）第二階段才開 |
 | `InpFixedLots` | 0.01 | **比 FX 配置小一號的精神**：XAUUSD 0.01 lot 已是最小 |
 | `InpCatastropheATRMult` | 1.5 | 黃金尾部風險較大，SL 較近（vs FX 的 2.0） |
-| `InpMaxSpreadPts` | 依 broker XAUUSD 亞洲時段常態點差 × 1.5 設定 | 開工前先量測 5 個交易日 |
+| `InpMaxSpreadPts` | preset 暫放 `300.0` | 這不是最終參數；正式 gate 前依 broker XAUUSD 亞洲時段常態點差 × 1.5 校準，需量測 5 個交易日 |
+| `InpAllowFullDayWindow` | false | MAIN/CTRL-1/CTRL-2 不需要；CTRL-3 需設 true |
 | `InpMagic` | 770021 | |
+
+已建立 presets：
+
+| Run | Preset | 用途 |
+|---|---|---|
+| MAIN | `../Strategy_Records/Strategy_Time_Window_XAUUSD_Gold_MAIN.set` | 亞洲時段 BUY 03:00–10:00 server |
+| CTRL-1 | `../Strategy_Records/Strategy_Time_Window_XAUUSD_Gold_CTRL1_LondonAM.set` | 倫敦上午 BUY 10:00–17:00 server |
+| CTRL-2 | `../Strategy_Records/Strategy_Time_Window_XAUUSD_Gold_CTRL2_US.set` | 美盤 BUY 17:00–00:00 server |
+| CTRL-3 | `../Strategy_Records/Strategy_Time_Window_XAUUSD_Gold_CTRL3_FullDay.set` | 03:00–次日 03:00 的 gold beta control；`InpAllowFullDayWindow=true` |
+
+`InpMaxSpreadPts=300.0` 只是一個可執行起點，避免 XAUUSD digits / point size 未確認時 preset 無法先跑；正式判定前必須用實際 broker spread 重設，並在回測紀錄中寫明 point size 與等價美元/oz spread。
 
 ### 對照實驗設計（本策略的核心，第 7 節第 2 步的具體化）
 
