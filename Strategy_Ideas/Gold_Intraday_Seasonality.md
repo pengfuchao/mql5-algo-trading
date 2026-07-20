@@ -2,7 +2,7 @@
 
 建立日期：2026-07-04
 
-狀態：Phase 1 research presets 已建立，待 XAUUSD H1 MAIN + controls 正式回測（長期統計紀錄支持，但需先驗證近年是否仍存在）
+狀態：**已驗證／否定，結案（2026-07-20）**。MAIN 正式回測完成：edge 僅 `0.110 USD/oz` < 中性成本 `0.29 USD/oz`，**G1 成本關卡不通過**（成本後 PF 0.956）；原始 PF 亦僅 1.028、Sharpe 0.339；逐年 9 年中 6 年為負、利潤集中 2024–2025，符合第 8 節事前寫下的「只是 gold beta」失效模式。依事前規則 CTRL-1/2/3 未執行。完整結果見 [Strategy_Records/Strategy_Time_Window.md](../Strategy_Records/Strategy_Time_Window.md)
 
 ## 1. 核心想法
 
@@ -98,7 +98,83 @@
 
 ## 10. 實作規劃（給 Codex 的 spec）
 
-**目前進度（2026-07-08）**：已確認不另寫新 EA，復用 `Strategies/Strategy_Time_Window.mq5`。為支援 CTRL-3「03:00 開、次日 03:00 平」的 24h gold beta control，EA 新增 `InpAllowFullDayWindow` opt-in；預設關閉，不影響 FX Time-of-Day 或一般日內 window。已建立 MAIN + CTRL-1/2/3 四組 research `.set` preset，下一步是 Strategy Tester 跑 XAUUSD H1 formal backtest。
+**目前進度（2026-07-20）**：已確認不另寫新 EA，復用 `Strategies/Strategy_Time_Window.mq5`。為支援 CTRL-3「03:00 開、次日 03:00 平」的 24h gold beta control，EA 新增 `InpAllowFullDayWindow` opt-in；預設關閉，不影響 FX Time-of-Day 或一般日內 window。已建立 MAIN + CTRL-1/2/3 四組 research `.set` preset。點差校準已完成、`InpMaxSpreadPts` 已定案為 `22.5`（見下方「點差校準結果」）。同一次校準發現**歷史深度不足**，導致 §9 的跨 regime 驗證無法執行，本次實驗改採 regime-limited 判定（見下方「歷史深度限制」）。下一步是依修正後的測試協定跑 XAUUSD H1 formal backtest。
+
+### 點差校準結果（2026-07-20）
+
+工具：`Utilities/Script_XAUUSD_Session_Spread_Calibration.mq5`（掃 M1 歷史的 `MqlRates.spread`，單位 points）。
+
+- `digits=2`、`point=0.01` → **1 point = 0.01 USD/oz**，與 `Strategy_Time_Window.mq5` 的 `(ask-bid)/_Point` 單位一致。
+- MAIN 窗口（server 03:00–10:00）：median `15`、p90 `17`、p95 `18`（近 1.5 年完整樣本）。
+- 定案：**`InpMaxSpreadPts = 22.5`**（median 15 × 1.5），四組 preset 統一使用。
+- 統一值的理由：gate 只在開倉時檢查，而四組的開倉時刻 median 為 15/15/13/15、p95 皆為 18，統一 gate 讓各組擋單率幾乎相同，**避免差別進場率污染 MAIN vs CTRL 的比較**。
+
+⚠️ **此數字只能當 spike gate，不能當黃金交易成本的證據**：demo 歷史點差呈現合成特徵（24 小時 median 幾乎全平、`avg < median` 代表分布被量化成少數離散值），與真實 XAUUSD「亞洲盤寬、歐美重疊時段緊」的日內形狀不符。成本結論必須另以實盤點差取得。
+
+成本數量級（供回測後對照）：0.01 lot = 1 oz，spread 15 points = **$0.15/round-turn**，約 250 筆/年 → **$37.5/年**。若亞洲盤 7 小時的方向性漂移只有 $0.1–0.3/oz 級別，成本與毛利同一數量級。**回測後必須先用 `Net Profit / Trades` 算 break-even，再看淨利**，避免重蹈 FX Time-of-Day 死在成本上的覆轍。
+
+### 歷史深度限制與 regime-limited 判定（2026-07-20，當日修正）
+
+**初版判定（已作廢）**：曾依 XAUUSD **M1** 歷史上限 981,289 根推論可用區間僅約 `2023.10–2026.06`（2.7 年）。**該推論錯誤** —— 那是 M1 的限制，本 EA 跑在 H1 且進出場在固定時刻，M1 深度不是綁定條件。
+
+**實測修正**：由一次 XAUUSD H1 tester run 的委託明細確認，實際可成交區間為 **2018.01.29–2026.06.29（約 8.4 年）**，H1 bars 64,776 根。逐年委託數：
+
+| 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026H1 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | **304** | 1554 | 1866 | 1860 | 1800 | **1178** | 1752 | 910 |
+
+因此：
+
+- **2019 與 2024 有明顯 tick 資料缺口**（正常年約 1800），tester 報告的「質量歷史 68% 真實報價」即反映此事。這兩年的統計必須標註為不完整年份，**不可當完整年份納入穩定性判斷**。
+- **2015–2017 完全無資料**，第 9 節原訂的 `2015–2019 vs 2020–2026` 拆分仍**無法照原樣執行**。
+- **但 regime 對比是可行的**：改以 `2018–2021`（購金潮前 / 早期）vs `2022–2026`（央行購金潮）兩段拆分，正好切在結構性變化點上。
+- 樣本量充足：MAIN 每交易日 1 筆，8.4 年扣除缺口 ≈ **1800 筆**。
+
+**修正後的 pre-registered 判定**：
+
+| 結果 | 判定 |
+|---|---|
+| MAIN 未通過成本關卡（見下節 G1） | **結案**，不再跑 CTRL 對照。 |
+| MAIN 未贏過 CTRL-1/2/3 | **結案**。第 8 節的「只是 gold beta」成立。 |
+| MAIN 全關通過，且 `2018–2021`／`2022–2026` 兩段皆成立 | 可寫入 `Strategy_Records/` 並討論晉級。 |
+| MAIN 全關通過，但效應只存在 `2022–2026` | **記為 beta 假象，結案**（原第 9 節精神保留）。 |
+
+### G1 — 成本關卡（pre-registered，MAIN 跑完後立即執行，**先於 CTRL 對照**）
+
+理由：`Strategy_Session_Range` 已示範一條 OOS 表現良好（OOS PF 1.235）的策略仍可因毛 edge 小於成本而結案。黃金這條線的單位報酬更薄，**必須先過成本關才值得跑對照組**。
+
+**單位換算**：`InpFixedLots=0.01`，XAUUSD 1.0 lot = 100 oz → **0.01 lot = 1 oz**。因此 tester 報告的「預期收益（Expected Payoff, USD/trade）**在數值上等於每筆 edge 的 USD/oz**」。這讓成本比較非常直接。
+
+**回測已含 / 未含**：real ticks 回測已包含 demo 點差；**未包含** commission、slippage，也未反映 demo 點差可能低估真實點差（見上方「點差校準結果」的合成資料紅旗）。
+
+額外成本假設（round-turn, USD/oz）：
+
+| 項目 | 樂觀 | 中性 | 保守 |
+|---|---:|---:|---:|
+| Commission（`$7/lot` RT ÷ 100 oz）| 0.00 | 0.07 | 0.07 |
+| Slippage | 0.03 | 0.07 | 0.15 |
+| 真實點差 − demo 點差（demo median 0.15）| 0.00 | 0.15 | 0.25 |
+| **合計 additional cost** | **0.03** | **0.29** | **0.47** |
+
+**判定公式**（`GP`、`GL`、winners、losers 取自 MAIN 報告）：
+
+```text
+PF' = (GP − winners × cost) / (GL + losers × cost)
+```
+
+**事前門檻**：
+
+| 條件 | 判定 |
+|---|---|
+| 中性情境 `PF' < 1.10` | **結案**，不跑 CTRL。低波動高頻策略 PF 天花板本就低，門檻沿用 FX 檔第 9 節的 1.10 而非 1.15 |
+| 中性 `PF' ≥ 1.10` 但保守情境 `PF' < 1.00` | 記為 **cost-marginal**，僅可繼續研究，**不得晉級** |
+| 中性 `PF' ≥ 1.10` 且保守 `PF' ≥ 1.00` | 通過 G1，進 CTRL 對照 |
+
+**快速預檢**：若報告的「預期收益」`< 0.29 USD/trade`，中性情境下 edge 已被成本吃光，可直接判結案，不必算 `PF'`。
+
+⚠️ 註記：cost 對 MAIN 與 CTRL-3 的**每筆**影響相同，但 MAIN 每筆只持倉 7h、CTRL-3 持倉 24h，因此**以「報酬/持倉小時」比較時成本對 MAIN 的傷害更大**。CTRL-3 對照必須用**成本後**數字計算，不可用原始報告數字。
+
+共通原則：**歷史或樣本的不足會削弱「通過」的可信度，但不削弱「否定」的可信度。** 因此任何一關的否定結論都直接生效、可據以結案；通過則需累積全部關卡才算數。
 
 ### 前置條件
 
@@ -115,20 +191,18 @@
 | `InpUseWindowB` | false | 空頭窗口（PM fix）第二階段才開 |
 | `InpFixedLots` | 0.01 | **比 FX 配置小一號的精神**：XAUUSD 0.01 lot 已是最小 |
 | `InpCatastropheATRMult` | 1.5 | 黃金尾部風險較大，SL 較近（vs FX 的 2.0） |
-| `InpMaxSpreadPts` | preset 暫放 `300.0` | 這不是最終參數；正式 gate 前依 broker XAUUSD 亞洲時段常態點差 × 1.5 校準，需量測 5 個交易日 |
+| `InpMaxSpreadPts` | **`22.5`（已定案）** | 校準自 M1 歷史點差 median 15 × 1.5；四組 preset 統一。詳見上方「點差校準結果」 |
 | `InpAllowFullDayWindow` | false | MAIN/CTRL-1/CTRL-2 不需要；CTRL-3 需設 true |
 | `InpMagic` | 770021 | |
 
-已建立 presets：
+Presets：
 
 | Run | Preset | 用途 |
 |---|---|---|
-| MAIN | `../Strategy_Records/Strategy_Time_Window_XAUUSD_Gold_MAIN.set` | 亞洲時段 BUY 03:00–10:00 server |
-| CTRL-1 | `../Strategy_Records/Strategy_Time_Window_XAUUSD_Gold_CTRL1_LondonAM.set` | 倫敦上午 BUY 10:00–17:00 server |
-| CTRL-2 | `../Strategy_Records/Strategy_Time_Window_XAUUSD_Gold_CTRL2_US.set` | 美盤 BUY 17:00–00:00 server |
-| CTRL-3 | `../Strategy_Records/Strategy_Time_Window_XAUUSD_Gold_CTRL3_FullDay.set` | 03:00–次日 03:00 的 gold beta control；`InpAllowFullDayWindow=true` |
+| MAIN | `../Strategy_Records/Strategy_Time_Window_XAUUSD_Gold_MAIN.set` | 亞洲時段 BUY 03:00–10:00 server（**保留**：本線結案證據的重現依據）|
+| CTRL-1/2/3 | *（2026-07-20 已刪除）* | MAIN 未通過 G1 成本關卡，依事前規則對照組不執行。窗口定義保留於下方「對照實驗設計」表，未來若以更深歷史重啟，可依該表於數分鐘內重建 |
 
-`InpMaxSpreadPts=300.0` 只是一個可執行起點，避免 XAUUSD digits / point size 未確認時 preset 無法先跑；正式判定前必須用實際 broker spread 重設，並在回測紀錄中寫明 point size 與等價美元/oz spread。
+`InpMaxSpreadPts` 已於 2026-07-20 完成校準並由佔位值 `300.0` 更新為 `22.5`，point size 與等價美元/oz 點差記錄於上方「點差校準結果」。
 
 ### 對照實驗設計（本策略的核心，第 7 節第 2 步的具體化）
 
@@ -145,11 +219,16 @@
 
 ### 年度拆分重點（第 7 節第 2 步）
 
-2015–2019（fix 改制後、購金潮前）與 2020–2026 兩段分開報告。**若 alpha 只存在 2022 之後 → 記錄為 beta 假象，結案**；若兩段皆成立才進成本壓測。
+**原設計**：2015–2019（fix 改制後、購金潮前）與 2020–2026 兩段分開報告；若 alpha 只存在 2022 之後 → 記錄為 beta 假象，結案。
+
+**2026-07-20 修正**：2015–2017 無資料，原訂拆分無法照原樣執行。改以 **`2018–2021` vs `2022–2026`** 兩段拆分（切在央行購金潮前後），並逐年列出。**2019 與 2024 有 tick 缺口（委託數僅約正常年的 17% / 65%），必須標註為不完整年份**，不可用於穩定性判斷。beta 判別仍由 CTRL-3 承擔。
 
 ### 測試協定
 
-- XAUUSD H1，2015.01–2026.06，real ticks，10000 USD，1:100，0.01 lot。
+- XAUUSD H1，**2015.01–2026.06（tester 會自動對齊到 2018.01 起的實際可用資料）**，real ticks，10000 USD，1:100，0.01 lot。
+  - ⚠️ **開跑前**必須在「輸入參數」分頁按「載入」選對 preset，並肉眼確認 `InpWindowADir=0 (BUY)`、`03:00–10:00`、`InpUseWindowB=false`。2026-07-20 曾發生未載入 preset、以 EA 預設值（FX Time-of-Day 配置：Window A SELL 10:00–18:00 + Window B BUY）誤跑的情況，該 run 作廢。
+  - ⚠️ 跑完必須核對報告開頭的 inputs 區塊與 model quality，確認 preset 生效且未退回模擬 tick。
 - 成本情境：原始 / 亞洲時段點差 ×1.5 / ×2。
-- 產出物：MAIN + 3 CTRL 共 4 份 report（×3 成本情境的 MAIN），依 `Strategy_Records/` 慣例命名；年度拆分表含兩個子期間。
-- 通過標準見第 9 節。空頭窗口（13:00–17:00 UTC 覆蓋 PM fix）**只有 MAIN 全關通過後**才作為獨立假說開 Window B 測試。
+- 產出物：MAIN + 3 CTRL 共 4 份 report（×3 成本情境的 MAIN），依 `Strategy_Records/` 慣例命名；逐年拆分表。
+- 通過標準見第 9 節，**但以上方「歷史深度限制」的修正判定表與「G1 成本關卡」為準**（執行順序：G1 → CTRL 對照 → regime 拆分）。
+- 空頭窗口（13:00–17:00 UTC 覆蓋 PM fix）**只有 MAIN 全關通過後**才作為獨立假說開 Window B 測試。

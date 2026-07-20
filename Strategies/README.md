@@ -8,8 +8,8 @@
 |---|---|---|
 | **研究管線** | `Strategy_SR_Channel_Breakout.mq5` | EURUSD H1 breakout 晉級 → [部署卡](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md)；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_SR_Channel_Breakout.md) |
 | **研究管線** | `PrecisionSniperEA.mq5` | USDJPY M15 候選，待 demo forward；研究紀錄見 [Strategy_Records](../Strategy_Records/PrecisionSniperEA.md) |
-| **研究管線** | `Strategy_Session_Range.mq5` | London Breakout baseline 已測；GBPUSD/EURUSD 否定，USDJPY M15 保留二輪驗證；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_Session_Range.md) |
-| **研究原型** | `Strategy_Time_Window.mq5` | FX Time-of-Day / Gold Intraday Seasonality 共用定時進出引擎；FX EURUSD Phase 1 baseline 未通過，Gold research presets 已建立，EA 保留作為純時間型研究引擎，狀態見 [FX IDEA §10](../Strategy_Ideas/FX_TimeOfDay_Effect.md#10-實作規劃給-codex-的-spec) / [Gold IDEA §10](../Strategy_Ideas/Gold_Intraday_Seasonality.md#10-實作規劃給-codex-的-spec) |
+| **研究管線** | `Strategy_Session_Range.mq5` | **已結案**：GBPUSD/EURUSD 否定；USDJPY 通過 OOS 但成本關卡失敗；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_Session_Range.md) |
+| **研究原型** | `Strategy_Time_Window.mq5` | 定時進出引擎；**FX EURUSD 與 Gold XAUUSD 兩條研究線皆已結案否定**，EA 本身機械行為正常並保留作為純時間型研究引擎；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_Time_Window.md) |
 | **研究原型** | `Strategy_Weekend_Gap.mq5` | Weekend Gap Fade demo-forward prototype；M15 short sample 通過但長樣本不足，僅供研究蒐集執行證據，狀態見 [IDEA §10](../Strategy_Ideas/Weekend_Gap_Fade.md#10-實作規劃給-codex-的-spec) |
 | **研究管線（待建紀錄）** | `Strategy_Turtle_Trading.mq5` | 實作完整但無回測紀錄，待補 baseline（建議 XAUUSD/USDJPY H1；出場 A/B 見 [TradingView harvest §2-B](../Strategy_Ideas/TradingView_External_Ideas_Harvest.md)）|
 | **低優先待評估** | `EA_ML_SuperTrend.mq5` | confidence 未校準，先驗低 |

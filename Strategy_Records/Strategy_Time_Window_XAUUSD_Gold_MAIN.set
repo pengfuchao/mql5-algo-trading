@@ -2,7 +2,12 @@
 ; Status: research baseline only; not a live/demo candidate.
 ; Tester setup: XAUUSD, H1, real ticks, 2015.01.01-2026.06.30.
 ; Hypothesis: Asia-session gold drift, BUY 03:00-10:00 server time under EET/EEST summer mapping (00:00-07:00 UTC).
-; Before formal gate, calibrate InpMaxSpreadPts from 5 trading days of XAUUSD Asia-session spread samples.
+; InpMaxSpreadPts calibrated 2026-07-20 from M1 history 2025.01-2026.06 (520764 bars) via
+; Utilities/Script_XAUUSD_Session_Spread_Calibration.mq5: digits=2, point=0.01 (1 point = 0.01 USD/oz),
+; window 03:00-10:00 median=15 p90=17 p95=18 -> 15 x 1.5 = 22.5. Same value applied to all four presets
+; so MAIN and CTRL entry gating is identical and cannot confound the control comparison.
+; PROVISIONAL: demo history spread looks synthetic (flat median across 24h, avg < median). Usable as a
+; spike gate, NOT as evidence of real gold trading cost. Cross-check live before any cost conclusion.
 InpUseWindowA=true
 InpWindowADir=0
 InpWindowAOpenHour=3
@@ -17,7 +22,7 @@ InpWindowBCloseHour=23
 InpWindowBCloseMin=0
 InpMagic=770021
 InpDeviation=20
-InpMaxSpreadPts=300.0
+InpMaxSpreadPts=22.5
 InpSpreadWaitMin=30
 InpLateEntryGraceMin=60
 InpAllowFullDayWindow=false

@@ -21,8 +21,8 @@
 |---|---|---|
 | PrecisionSniperEA | [PrecisionSniperEA.md](PrecisionSniperEA.md) | 研究中；USDJPY M15 短線為最佳候選，待 demo forward |
 | SR Channel Breakout | [Strategy_SR_Channel_Breakout.md](Strategy_SR_Channel_Breakout.md) | 通用結案；**EURUSD 專用 breakout 晉級**（回測全關通過）→ [Strategy_Live_Candidates](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md) demo forward |
-| Session Range / London Breakout | [Strategy_Session_Range.md](Strategy_Session_Range.md) | GBPUSD/EURUSD baseline 否定；USDJPY M15 保留二輪成本與 OOS 驗證 |
-| Time Window / Gold Intraday Seasonality | [Gold idea](../Strategy_Ideas/Gold_Intraday_Seasonality.md) | MAIN + CTRL research presets 已建立，待 XAUUSD H1 formal backtest；尚未建立正式結果紀錄 |
+| Session Range / London Breakout | [Strategy_Session_Range.md](Strategy_Session_Range.md) | **結案**：USDJPY 通過 OOS 但成本關卡失敗（edge ~1 pip < commission ~0.9 pip） |
+| Time Window（FX 時段效應 / 黃金日內季節性）| [Strategy_Time_Window.md](Strategy_Time_Window.md) | **兩條線皆結案**：EURUSD 與 XAUUSD 均未通過；引擎保留供未來時間型研究復用 |
 
 每份紀錄至少包含：
 
