@@ -11,6 +11,7 @@
 ### 研究統計腳本 (Research Statistics)
 *   **`Script_Weekend_Gap_Stats.mq5`**: Weekend Gap Fade Phase 0 統計掃描腳本。逐一掃描指定 symbols 的 M15 歷史資料，以週五最後一根 M15 與其後第一根 bar 定義 weekend gap，輸出每週 gap、24/48h 是否回補、bars to fill、MAE 與 ATR(D1) 正規化欄位到 `MQL5/Files/` CSV，並在 Experts log 印 gap-size bucket summary。
 *   **`Script_FX_TimeOfDay_Cost_Check.mq5`**: FX Time-of-Day Effect Phase 0 成本關卡腳本。不開倉，只抽樣目前 symbol bid/ask spread，將輸入的 round-turn commission 與 slippage 換算成 pips，輸出 one-side equivalent cost、GO/BORDERLINE/KILL 判定與 CSV 證據列。
+*   **`Script_XAUUSD_Session_Spread_Calibration.mq5`**: Gold Intraday Seasonality preset 校準腳本。不開倉，掃描 M1 歷史的 `MqlRates.spread`（單位 points），依 server hour 分組輸出 avg / median / p90 / p95 / max，一次同時校準 MAIN 與 CTRL-1/2/3 四個窗口，並給出建議 `InpMaxSpreadPts`（median × 安全倍數）與等價報價貨幣/oz 點差、CSV 證據。另會回報**實際取得的歷史區間與覆蓋率**：`CopyRates` 對缺資料的區間只會安靜回傳現有部分，因此長區間回測前應先用本腳本確認終端真的有那段歷史。**單位是 points，與 `Strategy_Time_Window.mq5` 一致；不可與 `Script_FX_TimeOfDay_Cost_Check.mq5` 的 pips 輸出混用。**
 
 ### 訂單與部位管理 (Order & Position Management)
 *   **`Util_Open_Order.mq5`**: 開倉下單的標準封裝工具，簡化 `CTrade` 的調用。
