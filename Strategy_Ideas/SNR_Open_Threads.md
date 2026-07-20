@@ -7,12 +7,20 @@
 
 詳細想法多數已在 [SNR_External_Ideas_Harvest.md](SNR_External_Ideas_Harvest.md) §2。
 
-## 🟢 已建好、但從沒實測過（最划算，純回測）
+## ✅ 已測完並否定（2026-07-20 更新索引；結果見研究紀錄 S9）
 
-| # | 方向 | 說明 | 狀態 |
+| # | 方向 | 結果 | 狀態 |
 |---|---|---|---|
-| 1 | **量過濾突破 `UseVolumeFilter`** | Phase 1 已實作、預設關閉、**一次都沒測過**。正是打「假突破」（害死 GBP/AUD 的元兇）。在 EURUSD A/B（false vs true，掃 `VolMult` 1.0/1.2/1.5），可能再推高 PF、甚至回救其他商品。**首選。** | 待測 |
-| 2 | **ATR 自適應通道寬度 `ChannelWidthMode=WIDTH_ATR`** | Phase 1 已實作、從沒 A/B。理論上比 Range% 更貼近近期波動。純回測。 | 待測 |
+| 1 | **量過濾突破 `UseVolumeFilter`** | IS 的 PF/Expected Payoff 確實提高（`VolMult=1.2` → PF 1.709），但**交易數由 103 降到 60，Back/Front 驗證 forward 明顯弱化**（Front PF 1.367、28 筆），Recovery/DD 未優於 baseline。 | **否定**，不替代 baseline |
+| 2 | **ATR 自適應通道寬度 `WIDTH_ATR`** | 交易數由約 103 暴增至 1464–2377，**PF 全部 < 1、DD 46–81%**。channel geometry 被改成大量 false breakout，不是可優化高原。 | **否定**，不做 Back/Front |
+
+> ⚠️ 索引曾長期標示這兩項為「待測」，實際上研究紀錄 S9 已完成並否定。**狀態以 [研究紀錄](../Strategy_Records/Strategy_SR_Channel_Breakout.md) 為準。**
+
+### 從 S9 學到的方向性結論
+
+EURUSD baseline 只有 **約 16 筆/年（6 年 103 筆）**。`UseVolumeFilter` 的失敗模式值得記住：**它確實提升了每筆品質，但把樣本砍到 forward 期不足 30 筆，統計上就守不住了。**
+
+推論：**對這條低頻線而言，任何「進場過濾器」都是錯誤方向** —— 它們必然減少交易數，而這條線的樣本數本來就是瓶頸。應優先考慮**不減少交易數、但放大每筆 edge 的改動（主要是出場）**。
 
 ## 🟡 已記錄、未實作（依價值）
 

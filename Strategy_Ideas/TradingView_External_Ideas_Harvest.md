@@ -75,9 +75,11 @@
 
 ## 4. 建議落地順序
 
-1. **A-1 Squeeze × SR Breakout（EURUSD H1）**：排在 SNR 待辦 #1（量過濾）與 #2（WIDTH_ATR）之後測——同一條晉級線上的第三個候選補強，三者各自 A/B 後再談組合。
-2. **B Chandelier × Turtle**：與 Turtle baseline 建檔同一輪跑掉。
-3. **A-2 Squeeze × London Breakout**：等 London Breakout 引擎寫好後，作為「區間品質過濾」的替代方案 A/B。
+> **2026-07-20 順序修訂**：原順序已過時。SNR #1（量過濾）與 #2（`WIDTH_ATR`）已完成並否定（研究紀錄 S9）；London Breakout 線已結案。修訂如下。
+
+1. **B Chandelier × Turtle（提升為首位）**：Turtle 尚無 baseline，且其 profile（低頻、寬停損、大贏單）通過 [workflow Step 0.5 成本可行性預檢](../Strategy_Records/MT5_Strategy_Research_Workflow.md)，屬結構上耐成本的類型。出場 A/B **不減少交易數**，符合 S9 學到的方向性結論。與 baseline 建檔同一輪跑掉，邊際成本近零。
+2. **A-1 Squeeze × SR Breakout（EURUSD H1）—— 降級、附前提**：Squeeze 是**進場過濾器**，而 EURUSD 線六年僅 103 筆；S9 的 volume filter 已示範同一失敗模式（IS 提升、forward 樣本不足）。**若要做，必須事前定義最低 forward 交易數門檻**（建議 ≥ 30），未達即判否定，不得以 IS 指標為準。
+3. ~~**A-2 Squeeze × London Breakout**~~：**取消**。London Breakout / `Session_Range` 線已於 2026-07-20 結案（成本關卡失敗），無宿主策略。
 
 ## 相關文件
 
