@@ -199,22 +199,102 @@ Back/Front 驗證：
 
 結論：`WIDTH_ATR` 讓交易數從 baseline 約 103 筆暴增到 1464–2377 筆，PF 全部 < 1、DD 46%–81%。這不是可優化高原，而是 channel geometry 被改成大量 false breakout。**`WIDTH_ATR` 在目前 EURUSD H1 breakout 架構下否定，不做 Back/Front。**
 
+### S10 — `iCustom` 參數錯位：S1–S9 全部作廢與真實參數的還原（2026-07-21）
+
+**起因**：為了做出場端 breakeven A/B，重跑 EURUSD baseline 作為對照組，得到 2088 筆、PF 0.999——與紀錄中的 103 筆、PF 1.47 相差 20 倍。
+
+#### 10.1 排除過程
+
+| Run | 組合 | 交易數 | PF | 用途 |
+|---|---|---:|---:|---|
+| A | HEAD build，CWP=2/MaxSR=3 | 2088 | 0.999 | 排除 breakeven 改動（結果與含 breakeven 版本相同）|
+| B | `26e0f6a` build，同參數 | **103** | **1.466** | 精確重現 S7 數據 |
+| C | HEAD build，CWP=5/MaxSR=6 | 3639 | 0.906 | 排除「參數標錯」假說（沒有任何參數組合能在 HEAD 上得到 103）|
+
+訊號層級比對（`Utilities/SRChannel_Signal_Diff.mq5`，在 tester 中並排跑兩個世代的指標）：
+
+- HEAD：2631 根 K 棒有突破訊號（7.05%）
+- `26e0f6a`：108 根（0.29%）
+- 第一根分歧：2020.06.09 10:00
+
+同時以 positional 與 override 兩種方式建立 HEAD 指標，兩者訊號**完全相同**（逐根、逐 buffer 值），排除傳參機制本身。
+
+#### 10.2 根因
+
+**`input group` 會佔用一個 `iCustom` positional 參數位。**
+
+`Support_Resistance_Channels.mq5` 的第一個宣告是 `input group "Settings"`，位於 `PivotPeriod` 之前。EA 以 positional 方式傳入 14 個參數時，第一個值被 group 吃掉，其餘**整體前移一位**，最後一個參數收不到值而保留預設。無編譯錯誤、無執行期錯誤。
+
+實測（指標端 `EFFECTIVE` 傾印 vs EA 請求值）：
+
+| 指標 input | EA 請求 | 指標實收 | 來源 |
+|---|---|---|---|
+| PivotPeriod | 10 | **4**（0 夾限）| 空 |
+| SourceMode | High/Low (0) | **2 → Close/Open 分支** | ← ChannelWidthPct |
+| ChannelWidthPct | 2 | **1** | ← MinStrength |
+| MinStrength | 1 | **3** | ← MaxNumSR |
+| MaxNumSR | 3 | **10**（290 夾限）| ← Loopback |
+| Loopback | 290 | **100**（0 夾限）| ← ChannelWidthMode |
+| ChannelWidthMode | Range% (0) | 14 → 非 ATR，仍走 Range% | ← ATRLen |
+| UseVolumeFilter | false | **true**（VolMaLen=1, VolMult=0.1，門檻近乎無效）| ← VolMaLen |
+| RetestExpiryBars | 20 | 20（預設，無值可收）| — |
+
+**commit `65062e9`（2026-07-02）意外修好了這個 bug**：它改用 global variable override，在 positional 之後覆寫，把錯位的值全部蓋掉。該 commit 被記為 hardening，而修好後交易數 103 → 2088 的巨變因為沒有重跑 baseline 而未被察覺，其後三週的研究都建立在斷層上。
+
+#### 10.3 真實參數還原（決定性驗證）
+
+以**修正後的程式碼**刻意設定成當年實際生效的那組參數重跑：
+
+`PivotPeriod=4`、`SourceMode=Close/Open`、`ChannelWidthPct=1`、`MinStrength=3`、`MaxNumSR=10`、`Loopback=100`（其餘同部署卡：Breakout、Range%、SL 1.5、TP 2.0、Risk 1%）
+
+| | S7（錯位參數，舊 build）| S10（刻意設定，修正後 build）|
+|---|---:|---:|
+| 交易數 | 103 | **103** |
+| PF | 1.466 | **1.466** |
+| 毛利 | 8093.02 | **8093.02** |
+| 淨利 | +2573 | **+2572.71** |
+
+毛損差 0.64 USD，來自指標端 volume filter 的近似（當年錯位成 `true` 但門檻為前一根量的 0.1 倍，實質 no-op；現行 EA 硬寫為關閉）。
+
+**結論：edge 是真的，但它屬於上述參數組，與部署卡 §2 記載的參數無關。**
+
+#### 10.4 作廢範圍
+
+- **S1–S7 全部作廢**：皆跑在錯位參數上。其名目參數（CWP、MaxSR、Loopback、Source）與實際生效值無對應關係。
+- **S8**（`OnTester` 評分修正）不受影響：純評分函式，不經 `iCustom`。
+- **S9 需重測**：跑在修正後的程式碼上，但對照的 baseline 是 S7 的舊數字，實驗組與對照組跨世代，結論不成立。`UseVolumeFilter` 與 `WIDTH_ATR` 退回待測。
+- **§6「`ChannelWidthPct` 在 1–4 無效」作廢**：該觀察來自 S3，當時 `ChannelWidthPct` 收到的是 `MinStrength` 的值，掃描 CWP 1–4 實際上在掃描一個不存在的維度。
+- **`PrecisionSniperEA` 核心不受影響**（`PrecisionSniper` 指標無 `input group`）；僅 `InpUseSNRFilter=true` 時會踩到，該 filter 預設關閉且已 shelved。任何開啟該 filter 的實驗需作廢。
+
+#### 10.5 已建立的防護
+
+- 指標 `OnInit` 傾印全部 14 個生效參數（`SRchannel EFFECTIVE:`），與 EA 的請求值可逐項對照。
+- `AGENTS.md` 規則 8a/8b：禁止對含 `input group` 的指標使用 positional `iCustom`；EA 與指標雙方都必須記錄參數，且交易數為介面改動的 canary。
+- `Utilities/SRChannel_Signal_Diff.mq5` 保留為回歸工具。
+
 ## 4. 結論
 
-- **通用策略結案**：Phase 2 retest 假說否定、SR-channel 突破/回測**無跨商品穩健 edge**（GBP 虧、AUD 平、XAU 爆）。最佳版本是裸突破。
-- **EURUSD 專用 breakout 晉級**：單商品裸突破通過 walk-forward + 逐年 + 成本壓測，已移入 `Strategy_Live_Candidates/` 等待 demo forward 實戰檢驗。
-- Phase 1 filter/width 研究結論：volume filter 技術有效但 forward 不夠穩，`WIDTH_ATR` 技術有效但績效明顯惡化；兩者都**不晉級**，保留程式碼作研究用途。
-- 指標 Phase 1（ATR 寬度、量過濾）+ Phase 2（retest buffer）程式碼保留可用，但 EURUSD live-candidate baseline 維持 Range% + no volume filter。
+> ⚠️ 以下 S1–S7 相關結論**已於 S10 作廢**，保留供追溯。有效結論見 S10。
+
+- ~~**通用策略結案**：Phase 2 retest 假說否定、SR-channel 突破/回測無跨商品穩健 edge。~~ 跨商品測試（S5）跑在錯位參數上，需重測。
+- ~~**EURUSD 專用 breakout 晉級**~~：晉級依據的參數表與績效不對應，部署卡已標記停用。
+- Phase 1 filter/width 結論（S9）：退回待測，理由見 10.4。
+- **S10 有效結論**：EURUSD H1 breakout 在 `prd=4 / Close-Open / CWP=1 / MinStr=3 / MaxSR=10 / Loopback=100` 這組參數上，六年 103 筆、PF 1.466、淨利 +2573。**此為單次全期 in-sample 結果，尚未經任何樣本外或穩健性檢驗。**
 
 ## 5. 後續
 
-1. **EURUSD 線 → demo forward**（見部署卡）；統計級確認需 6–12 個月。
-2. SNR 研究線：停止 `WIDTH_ATR` 放大測試；下一步若繼續研究，優先看更嚴格的 breakout confirmation、session/regime filter，或重新設計 channel merge logic。
+1. **EURUSD 線從 S1 重跑全部關卡**，以 10.3 的參數組為 baseline：全期 → walk-forward（內建 Forward）→ 逐年穩定性 → 跨商品 → 成本壓測。原本的 S3–S7 檢驗名義上測的是另一組參數，不可沿用。
+2. **重跑前先確認 `SRchannel EFFECTIVE:` 與 EA 請求值一致**，並記錄交易數作為後續介面改動的 canary。
+3. S9 的 `UseVolumeFilter` / `WIDTH_ATR` 在新 baseline 上重測。
+4. 出場端 breakeven A/B（原本的 S10 計畫）延後至新 baseline 確立之後。
 
 ## 6. 已知無效 / 注意事項
 
-- `ChannelWidthPct` 在 1–4 對結果無效（鏈接飽和）；`WIDTH_ATR` 在 EURUSD H1 breakout 造成交易數暴增與 PF<1；高波動商品（XAUUSD）的 ATR 風險手數會放大回撤，需另行檢視風控。
+- ~~`ChannelWidthPct` 在 1–4 對結果無效（鏈接飽和）~~ **已於 S10 作廢**：該觀察是參數錯位的產物。
+- `WIDTH_ATR` 在 EURUSD H1 breakout 造成交易數暴增與 PF<1（S9）——**需在新 baseline 上重測**。
+- 高波動商品（XAUUSD）的 ATR 風險手數會放大回撤，需另行檢視風控。
 - 所有結果皆為 in-sample 或單次 OOS，**非 live readiness**；尚未納入 commission/swap、broker 差異與多 regime 壓力。
+- **`input group` + positional `iCustom` 會造成沉默的參數錯位**（S10）。任何新增的 EA↔指標介面都必須雙向記錄參數後才可信任回測結果。
 
 ## 7. 附錄：EA 行為與介面文件（2026-07-04 自 `Strategies/README.md` 移入，行為文件以本節為準）
 

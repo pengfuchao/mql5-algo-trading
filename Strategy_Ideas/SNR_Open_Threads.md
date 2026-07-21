@@ -7,7 +7,9 @@
 
 詳細想法多數已在 [SNR_External_Ideas_Harvest.md](SNR_External_Ideas_Harvest.md) §2。
 
-## ✅ 已測完並否定（2026-07-20 更新索引；結果見研究紀錄 S9）
+> ⛔ **2026-07-21：本檔多數內容待重整。** 研究紀錄 S10 查明 S1–S9 跑在錯位的 `iCustom` 參數上（`input group` 佔用 positional 參數位）。下表兩項「已否定」退回**待測**，#9 `ChannelWidthPct` 技術債已確認是錯位的產物而非真實現象。狀態以[研究紀錄 S10](../Strategy_Records/Strategy_SR_Channel_Breakout.md) 為準。
+
+## ⚠️ 曾標為已否定，現退回待測（原據 S9，已因 S10 失效）
 
 | # | 方向 | 結果 | 狀態 |
 |---|---|---|---|

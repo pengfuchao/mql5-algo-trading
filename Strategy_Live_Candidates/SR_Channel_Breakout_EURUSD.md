@@ -28,12 +28,14 @@
 >
 > 訊號層級比對（`Utilities/SRChannel_Signal_Diff.mq5`）確認分歧在指標訊號產生階段：同樣名目參數下，修正後 7.05% 的 K 棒有突破訊號，修正前只有 0.29%。
 >
-> **結論：§2 的參數表與 §3 的績效數字從未對應過。** 用宣稱的參數跑，策略沒有 edge；PF 1.47 屬於上表右欄那組沒有人打算使用的參數。
+> **結論：§2 的參數表與 §3 的績效數字從未對應過。** 用宣稱的參數跑，策略沒有 edge（2088 筆 / PF 0.999）；PF 1.47 屬於上表右欄那組沒有人打算使用的參數。
+>
+> **edge 本身是真的。** 2026-07-21 以修正後的程式碼刻意設定成右欄那組參數重跑，精確重現：103 筆、PF 1.466、淨利 +2572.71（見 [Strategy_Records](../Strategy_Records/Strategy_SR_Channel_Breakout.md) S10.3）。
 >
 > **在重驗結束前：**
 > - 不可依本卡部署 demo 或 live。
-> - S1–S7 的所有回測結論一併失效（皆跑在錯位參數上）。
-> - 證據鏈與後續處置見 [Strategy_Records](../Strategy_Records/Strategy_SR_Channel_Breakout.md)。
+> - S1–S7 的所有回測結論一併失效（皆跑在錯位參數上）；S9 退回待測。
+> - 新參數組**僅有單次全期 in-sample 結果**，尚未經 walk-forward、逐年、跨商品或成本壓測。本卡待該序列完成後重寫。
 
 - EA：[`Strategies/Strategy_SR_Channel_Breakout.mq5`](../Strategies/Strategy_SR_Channel_Breakout.mq5)
 - 指標（須先編譯並置於 `MQL5\Indicators\`）：[`Indicators/Support_Resistance_Channels.mq5`](../Indicators/Support_Resistance_Channels.mq5)
