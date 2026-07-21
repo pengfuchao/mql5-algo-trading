@@ -254,10 +254,37 @@ GradeFilter=All
 
 判讀：
 
-- 淘汰。問題不在 `InpSNRBlockDistanceATR`、也不在參數對齊。
-- 根因：`Support_Resistance_Channels` 的 NearestRes/NearestSup buffer（4/5）在 Strategy Tester 以 `iCustom` 載入時**沒有被填出通道值**（掛在圖表上能畫出通道，但回測環境 buffer 讀到 0），因此 filter 永遠拿到 0 → 永遠放行，等同沒有過濾。
-- 「用指標 buffer 做距離過濾」這條路在回測層面確認行不通。
-- 若未來要重啟此構想，需改為 **EA 內部自行計算 S/R 通道**，不依賴該指標的輸出 buffer。
+> ## ⛔ 本節原始判讀已於 2026-07-22 推翻，根因為 `input group` 參數錯位
+>
+> **原判讀（錯誤，保留供追溯）**：
+>
+> - ~~根因：`Support_Resistance_Channels` 的 NearestRes/NearestSup buffer（4/5）在 Strategy Tester 以 `iCustom` 載入時沒有被填出通道值（掛在圖表上能畫出通道，但回測環境 buffer 讀到 0）。~~
+> - ~~「用指標 buffer 做距離過濾」這條路在回測層面確認行不通。~~
+> - ~~若未來要重啟此構想，需改為 EA 內部自行計算 S/R 通道，不依賴該指標的輸出 buffer。~~
+>
+> **實際根因**：`Support_Resistance_Channels.mq5` 的第一個宣告是 `input group "Settings"`，而 **`input group` 會佔用一個 `iCustom` positional 參數位**。EA 以 positional 方式傳入 14 個參數，第一個值被 group 吃掉，其餘整體前移一位（機制與作廢 SR Channel 線 S1–S7 的 bug 相同，見 [Strategy_SR_Channel_Breakout](Strategy_SR_Channel_Breakout.md) §S10）。
+>
+> **驗證（2026-07-22，USDJPY M15 2026.05）**：指標端 `EFFECTIVE` 傾印實測
+>
+> ```
+> PivotPeriod=4 Source=5 ChannelWidthPct=1 MinStrength=6 MaxNumSR=10 Loopback=100
+> ChannelWidthMode=14 ATRLen=1 ATRMult=0.0100 UseVolumeFilter=true VolMaLen=1
+> VolMult=0.1000 RetestTolerATR=20.0000 RetestExpiryBars=20
+> ```
+>
+> 以「對齊圖表參數」那組輸入（`10 / 0 / 5 / 1 / 6 / 290 / 0 / 14 / 0.3 / false / 20 / 1.0 / 0.1 / 20`）代入偏移模型，**14 個欄位全部吻合**：`PivotPeriod` 收到空值夾成 4、`SourceMode` 收到 `ChannelWidthPct` 的 5、`MinStrength` 收到 `MaxNumSR` 的 6、`Loopback` 收到 `ChannelWidthMode` 的 0 夾成 100，餘類推。
+>
+> 錯位後的 `MinStrength=6 / ChannelWidthPct=1 / Loopback=100` 使通道數為 0，NearestRes/NearestSup 因此恆為 `0.000`。「掛圖表能畫、回測讀不到」的不對稱亦得解釋：**掛圖表時指標直接使用自身 input，不經過 `iCustom`，不會錯位。**
+>
+> 上表「對齊圖表參數後重跑，nearest 仍全為 0.000」那一步是關鍵誤導——對齊的是 EA 的 input 值，而錯位發生在傳遞層，對齊多少次都不會生效。
+>
+> **修正後的狀態**：
+>
+> - **此實驗從未成立**，「淘汰」結論撤回。SNR 距離過濾的有效性目前**未知**，非「已否定」。
+> - 「用指標 buffer 做距離過濾行不通」是**假通則，已作廢**，不得作為未來設計依據。
+> - ⚠️ **`InpUseSNRFilter=true` 目前仍會踩到此 bug**（EA 的 `iCustom` 呼叫仍為 positional）。重啟此構想前必須先修正參數傳遞，並以指標端 `EFFECTIVE` 逐項核對。
+> - 重啟優先序：應**先讓 PrecisionSniper 主線通過 [workflow Step 0.5 成本可行性預檢](MT5_Strategy_Research_Workflow.md)**（本研究日誌成文於 2026-07-02，早於 Step 0.5 的 07-20 導入，該關從未執行）。主線若過不了成本關卡，filter 是否有效並不重要。
+
 - 現狀：`InpUseSNRFilter` 預設維持 `false`，既有 baseline 不受影響；`Indicators/PrecisionSniper_SNR.mq5`（早期 composite 指標）已不被 EA 使用，屬 orphaned。
 
 ## 5. Timeframe 測試
@@ -478,7 +505,7 @@ USDJPY delay stress：
 - D1 作為主策略設定：目前 trades 太少，只能作為觀察候選
 - GBPUSD Candidate B 目前設定。
 - XAUUSD Candidate B 暫不優先，因 PF 接近 1 且 drawdown 較高。
-- PrecisionSniper + SNR 通道距離過濾（見 4.3）：回測環境 iCustom 讀不到指標 nearest buffer，filter 從未生效，淘汰。
+- PrecisionSniper + SNR 通道距離過濾（見 4.3）：**「淘汰」結論已於 2026-07-22 撤回**。filter 從未生效屬實，但根因是 `input group` 造成的 `iCustom` 參數錯位，非 tester buffer 問題。**此實驗從未成立，有效性未知**；重啟前須先修正參數傳遞，且應先讓主線通過 Step 0.5 成本預檢。
 
 ### 核心風險
 
