@@ -47,9 +47,11 @@ EURUSD baseline 只有 **約 16 筆/年（6 年 103 筆）**。`UseVolumeFilter`
 
 ## 建議下次的起手式
 
-1. **先測 #1 量過濾**（已建好、直接打假突破、可能同時提升 EURUSD 並回救其他商品）。
-2. 接著測 #2 `WIDTH_ATR`，與 Range% baseline 做同快照 A/B。
-3. 想要結構升級提升訊號品質 → **#3 HTF confluence**（EA 端、不動指標）。
+> 2026-07-20 更新：原本列的前兩項（#1 量過濾、#2 `WIDTH_ATR`）**已於 S9 測完並否定**，不要再跑。
+
+1. **啟動 EURUSD 線的 demo forward**（部署卡自 2026-06-30 起即為「待啟動」）。這條線的瓶頸是樣本，不是參數；demo 是目前唯一能增加樣本的動作。
+2. **出場端 A/B**（breakeven / partial close / Chandelier 追蹤）——**不減少交易數**，符合 S9 與 [workflow Step 0.5](../Strategy_Records/MT5_Strategy_Research_Workflow.md) 的方向性結論。目前 EA 只有固定 ATR SL + RR TP，無 trailing / breakeven / 部分平倉，是最大的未探索面。
+3. **進場過濾器（#3 HTF confluence、#6 proximity、Squeeze 閘門）一律降級**：六年僅 103 筆，任何濾網都會把 forward 樣本壓到統計失效。若仍要做，須事前寫下最低 forward 交易數門檻（建議 ≥ 30），未達即判否定。
 
 ## 相關文件
 

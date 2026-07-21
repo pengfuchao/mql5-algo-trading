@@ -237,11 +237,24 @@ int OnInit()
    g_volBlockedBreakouts = 0;
    g_volUnavailableBreakouts = 0;
 
-   PrintFormat("SRchannel width inputs: ChannelWidthMode=%d ATRLen=%d ATRMult=%.4f ChannelWidthPct=%d",
+   // 生效參數完整傾印：與呼叫端（EA）印出的請求值逐項對照即可發現參數錯位。
+   // 背景：`input group` 會佔用一個 iCustom positional 參數位，曾導致 14 個參數
+   // 整體前移一位而無任何編譯或執行期錯誤（2026-07-21 查明，見 Strategy_Records S10）。
+   PrintFormat("SRchannel EFFECTIVE: PivotPeriod=%d Source=%d ChannelWidthPct=%d MinStrength=%d MaxNumSR=%d Loopback=%d ChannelWidthMode=%d ATRLen=%d ATRMult=%.4f UseVolumeFilter=%s VolMaLen=%d VolMult=%.4f RetestTolerATR=%.4f RetestExpiryBars=%d",
+               g_prd,
+               (int)g_sourceMode,
+               g_chw,
+               g_minstr,
+               g_maxsr + 1,          // 還原成 input 語意 (內部存的是 -1 後的值)
+               g_loopback,
                (int)g_channelWidthMode,
                g_atrlen,
                g_atrmult,
-               g_chw);
+               (g_useVolumeFilter ? "true" : "false"),
+               g_vollen,
+               g_volmult,
+               g_rtol,
+               g_rexp);
 
    if(g_useVolumeFilter)
       PrintFormat("SRchannel volume filter inputs: UseVolumeFilter=true VolMaLen=%d VolMult=%.2f",

@@ -1,7 +1,39 @@
 # 部署卡：SR Channel Breakout — EURUSD 專用
 
-狀態：**demo forward 待啟動**（回測全關通過）
+狀態：**⛔ 暫停使用 — 驗證證據失效，調查中**（2026-07-21）
 建立日期：2026-06-30
+
+> ## ⛔ 本卡的績效數字對應的不是本卡的參數，不可部署
+>
+> 2026-07-21 查明：本卡 §3 的驗證數據（PF 1.47 / +2573 / 103 筆）是在**參數傳遞錯誤**的情況下產生的。當時的 EA 以 positional `iCustom` 傳參，而 `Support_Resistance_Channels.mq5` 的第一個宣告是 `input group "Settings"`——**`input group` 會佔用一個 `iCustom` positional 參數位**，導致 14 個參數整體前移一位。
+>
+> 指標實際收到的是（`EFFECTIVE` 實測）：
+>
+> | | 本卡宣稱 | 指標實收 |
+> |---|---|---|
+> | PivotPeriod | 10 | **4** |
+> | ChannelWidthPct | 2 | **1** |
+> | MaxNumSR | 3 | **10** |
+> | Loopback | 290 | **100** |
+> | SourceMode | High/Low | **2（落入 Close/Open 分支）** |
+> | UseVolumeFilter | false | **true**（VolMaLen=1, VolMult=0.1）|
+>
+> 2026-07-02 的 commit `65062e9` 改用 global variable override，**意外修好了這個 bug**（override 在 positional 之後覆寫，蓋掉了錯位的值）。以修好後的程式碼、用本卡宣稱的參數重跑：
+>
+> | Build | CWP / MaxSR | 交易數 | PF |
+> |---|---|---:|---:|
+> | `26e0f6a`（本卡數據來源）| 2 / 3 | 103 | **1.466** |
+> | 現行 HEAD | 2 / 3 | 2088 | 0.999 |
+> | 現行 HEAD | 5 / 6 | 3639 | 0.906 |
+>
+> 訊號層級比對（`Utilities/SRChannel_Signal_Diff.mq5`）確認分歧在指標訊號產生階段：同樣名目參數下，修正後 7.05% 的 K 棒有突破訊號，修正前只有 0.29%。
+>
+> **結論：§2 的參數表與 §3 的績效數字從未對應過。** 用宣稱的參數跑，策略沒有 edge；PF 1.47 屬於上表右欄那組沒有人打算使用的參數。
+>
+> **在重驗結束前：**
+> - 不可依本卡部署 demo 或 live。
+> - S1–S7 的所有回測結論一併失效（皆跑在錯位參數上）。
+> - 證據鏈與後續處置見 [Strategy_Records](../Strategy_Records/Strategy_SR_Channel_Breakout.md)。
 
 - EA：[`Strategies/Strategy_SR_Channel_Breakout.mq5`](../Strategies/Strategy_SR_Channel_Breakout.mq5)
 - 指標（須先編譯並置於 `MQL5\Indicators\`）：[`Indicators/Support_Resistance_Channels.mq5`](../Indicators/Support_Resistance_Channels.mq5)

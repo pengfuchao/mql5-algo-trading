@@ -61,6 +61,8 @@ Never:
 6. Separate signal generation, execution, position sizing, exits, and risk controls.
 7. Check and log trade return values and `CTrade` result descriptions.
 8. Avoid repainting and look-ahead bias. Document any indicator buffer that may change intrabar.
+8a. **`input group` occupies an `iCustom` positional parameter slot.** Never call `iCustom` positionally against an indicator whose inputs are organised with `input group` — every parameter silently shifts by one per preceding group, with no compile error and no runtime error. Verified 2026-07-21: this invalidated the entire S1–S7 backtest series for `Strategy_SR_Channel_Breakout` (see `Strategy_Records/Strategy_SR_Channel_Breakout.md` S10). Either drive such indicators through an explicit named-parameter mechanism, or verify delivery before trusting any result.
+8b. **Whenever an EA passes parameters to an indicator, both sides must log them, and the two logs must be compared before any backtest is treated as evidence.** Trade count is the cheapest canary: a baseline whose trade count moves after an interface change is a regression until proven otherwise.
 9. Do not treat files under `Utilities/` as reusable include modules unless they are first converted to `.mqh` and script event handlers such as `OnStart()` are removed.
 10. Do not commit generated `.ex5` binaries or local AI-tool configuration directories.
 
