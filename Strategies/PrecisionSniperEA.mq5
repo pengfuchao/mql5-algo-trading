@@ -496,7 +496,28 @@ int OnInit()
       return INIT_FAILED;
    }
 
+   // ⛔ SNR filter 目前停用 (2026-07-22)：下方以 positional iCustom 傳參，而
+   //    Support_Resistance_Channels.mq5 的第一個宣告是 `input group "Settings"`，
+   //    **`input group` 會佔用一個 iCustom positional 參數位**，導致 14 個參數整體
+   //    前移一位。實測指標收到 PivotPeriod=4 / MinStrength=6 / ChannelWidthPct=1 /
+   //    Loopback=100，通道數為 0，NearestRes/NearestSup 恆為 0.000 —— filter 永遠
+   //    放行卻毫無跡象，回測報告完全看不出異常。
+   //
+   //    這正是 AGENTS.md 禁止事項 #6 (不得靜默吞掉指標失敗)，故改為 fail closed。
+   //    詳見 Strategy_Records/PrecisionSniperEA.md §4.3 與
+   //    Strategy_Records/Strategy_SR_Channel_Breakout.md §S10。
+   //
+   //    解除條件：改用具名參數傳遞 (如 SR Channel EA 的 global variable override)，
+   //    並以指標端 `SRchannel EFFECTIVE:` 逐項核對無誤後，移除本 guard 即可恢復
+   //    下方原始實作 (刻意保留未動)。
    if(InpUseSNRFilter)
+   {
+      Alert("PrecisionSniperEA: InpUseSNRFilter 目前停用 —— iCustom 參數錯位使 filter 永遠不生效 (見 Strategy_Records/PrecisionSniperEA.md §4.3)。修正參數傳遞前請維持 false。");
+      Print("PrecisionSniperEA: 拒絕載入 —— InpUseSNRFilter=true 但 SNR 參數傳遞尚未修正，filter 會靜默失效。");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+
+   if(InpUseSNRFilter)   // 上方 guard 使本區塊目前不可達；修正傳遞後即自動恢復
    {
       string snrIndicatorName = InpSNRIndName;
       if(snrIndicatorName == "PrecisionSniper_SNR")

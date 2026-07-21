@@ -282,7 +282,8 @@ GradeFilter=All
 >
 > - **此實驗從未成立**，「淘汰」結論撤回。SNR 距離過濾的有效性目前**未知**，非「已否定」。
 > - 「用指標 buffer 做距離過濾行不通」是**假通則，已作廢**，不得作為未來設計依據。
-> - ⚠️ **`InpUseSNRFilter=true` 目前仍會踩到此 bug**（EA 的 `iCustom` 呼叫仍為 positional）。重啟此構想前必須先修正參數傳遞，並以指標端 `EFFECTIVE` 逐項核對。
+> - 🔒 **`InpUseSNRFilter=true` 已於 2026-07-22 改為 fail closed**：EA 的 `iCustom` 呼叫仍為 positional，因此 `OnInit` 直接回傳 `INIT_PARAMETERS_INCORRECT` 並提示原因，避免有人開啟後得到一個「永遠放行卻毫無跡象」的過濾器（`AGENTS.md` 禁止事項 #6）。原始實作刻意保留未動。
+>   **解除條件**：改用具名參數傳遞（如 SR Channel EA 的 global variable override），並以指標端 `SRchannel EFFECTIVE:` 逐項核對無誤後，移除 guard 即自動恢復。
 > - 重啟優先序：應**先讓 PrecisionSniper 主線通過 [workflow Step 0.5 成本可行性預檢](MT5_Strategy_Research_Workflow.md)**（本研究日誌成文於 2026-07-02，早於 Step 0.5 的 07-20 導入，該關從未執行）。主線若過不了成本關卡，filter 是否有效並不重要。
 
 - 現狀：`InpUseSNRFilter` 預設維持 `false`，既有 baseline 不受影響；`Indicators/PrecisionSniper_SNR.mq5`（早期 composite 指標）已不被 EA 使用，屬 orphaned。
