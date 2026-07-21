@@ -13,11 +13,18 @@
 //|  因此必須在 Strategy Tester 中逐根推進取樣，即時圖表上讀到的       |
 //|  歷史一律為 0。                                                   |
 //|                                                                  |
-//|  前置作業 (兩支指標都要在 MQL5\Indicators\ 下且已編譯)：           |
-//|    1. HEAD 版：Support_Resistance_Channels.ex5                    |
-//|       —— 無參數 iCustom + global variable override               |
-//|    2. S7 版 ：Support_Resistance_Channels_S7ref.ex5               |
-//|       —— 由 26e0f6a 的原始碼另存此檔名後編譯，positional 傳參      |
+//|  前置作業：參考版指標是**用完即刪的一次性建置**，不進 repo。       |
+//|  要比對某個歷史版本時，於終端機重新產生：                          |
+//|                                                                  |
+//|    git show <commit>:Indicators/Support_Resistance_Channels.mq5 \ |
+//|      > "<終端機>/MQL5/Indicators/Support_Resistance_Channels_S7ref.mq5" |
+//|                                                                  |
+//|  然後在 MetaEditor 編譯它。現行版 (Support_Resistance_Channels)   |
+//|  已在 Indicators\ 下，不需另外處理。                              |
+//|                                                                  |
+//|  若要進一步定位「哪個中間值先分歧」，可在兩份來源套用相同的        |
+//|  PrintFormat patch (cwidth / pivots / channels / SR 界線)，       |
+//|  作法見 Strategy_Records S10.1。                                  |
 //|                                                                  |
 //|  用法：Strategy Tester 選本 EA，設定與回測 baseline 相同           |
 //|  (EURUSD H1, 2020.06.01-2026.06.01)，跑完看 Journal 摘要。        |
@@ -26,9 +33,6 @@
 #property version   "1.00"
 #property tester_indicator "Support_Resistance_Channels.ex5"
 #property tester_indicator "Support_Resistance_Channels_S7ref.ex5"
-//--- 附中間值列印的診斷副本 (僅存在於終端機，不進 repo)
-#property tester_indicator "SRC_dbg_head.ex5"
-#property tester_indicator "SRC_dbg_s7.ex5"
 
 //--- 必須與指標的 enum 數值一致
 enum ENUM_SR_SOURCE
