@@ -296,6 +296,62 @@ Back/Front 驗證：
 - 所有結果皆為 in-sample 或單次 OOS，**非 live readiness**；尚未納入 commission/swap、broker 差異與多 regime 壓力。
 - **`input group` + positional `iCustom` 會造成沉默的參數錯位**（S10）。任何新增的 EA↔指標介面都必須雙向記錄參數後才可信任回測結果。
 
+## 6.5 重驗序列 R1–R6（2026-07-21 建立，**門檻於執行前寫定**）
+
+S1–S7 作廢後，本線以 S10.3 還原出的參數組從頭重驗。**本節的判定門檻在任何 R2+ 結果產出之前寫定，不得於見到結果後調整。**
+
+### 共用設定（每一關都相同）
+
+| 項目 | 值 |
+|---|---|
+| EA / 指標 | `Strategy_SR_Channel_Breakout` / `Support_Resistance_Channels` |
+| 商品 / 週期 | EURUSD / H1（R5 除外）|
+| 模型 | Every tick based on real ticks |
+| 初始資金 / 槓桿 | 10,000 USD / 1:100 |
+
+**參數組（S10.3 還原值，R1–R3、R5–R6 全程固定不動）**
+
+| Input | 值 | | Input | 值 |
+|---|---|---|---|---|
+| `InpPivotPeriod` | **4** | | `InpSignalMode` | Breakout (0) |
+| `InpSourceMode` | **Close/Open (1)** | | `InpChannelWidthMode` | Range% (0) |
+| `InpChannelWidthPct` | **1** | | `InpSLMultiple` | 1.5 |
+| `InpMinStrength` | **3** | | `InpTPRatio` | 2.0 |
+| `InpMaxNumSR` | **10** | | `InpUseRiskSizing` | true |
+| `InpLoopback` | **100** | | `InpRiskPercent` | 1.0 |
+| `InpUseVolumeFilter` | false | | `InpMagic` | 770010 |
+
+### 每一關的強制前置檢查
+
+1. Journal 出現 `SRchannel EFFECTIVE:`，且 `PivotPeriod=4 Source=1 ChannelWidthPct=1 MinStrength=3 MaxNumSR=10 Loopback=100` 逐項相符。**不符即中止，不看績效數字。**
+2. 記錄交易數。交易數是介面改動的 canary（S10 教訓）。
+
+### 關卡與門檻
+
+| 關 | 內容 | 通過門檻（事前寫定）|
+|---|---|---|
+| **R1** | 全期 2020.06–2026.06，固定參數 | ✅ **已完成**（S10.3）：103 筆、PF 1.466、+2572.71 |
+| **R2** | **樣本外分割**：Development 2020.06–2024.06 / OOS 2024.06–2026.06，**參數固定、不最佳化** | OOS `PF ≥ 1.20` **且** OOS 交易數 `≥ 30`。OOS `PF < 1.0` → 直接結案 |
+| **R3** | **逐年穩定性**：6 個一年窗，參數固定 | `≥ 5/6` 年淨利為正，**且**扣除最佳年後其餘年合計仍為正 |
+| **R4** | **參數敏感度（本線最關鍵）**：對 `PivotPeriod {3,4,5}`、`ChannelWidthPct {1,2}`、`MinStrength {2,3,4}`、`Loopback {100,150}` 逐一單軸微調，其餘固定 | 鄰點中 `≥ 50%` 維持 `PF ≥ 1.20`。若僅原點高、鄰點全面崩壞 → 判定為尖峰而非高原，**結案** |
+| **R5** | **跨商品**：GBPUSD / AUDUSD / USDJPY / XAUUSD，參數固定 | **不設否決門檻**（本線本即單商品候選）。僅記錄，用於判斷 edge 性質 |
+| **R6** | **成本壓測**：commission $3.5/手/單邊（來回 $7），全期 | 成本後 `PF ≥ 1.20`，且每筆 edge / 成本地板比值 `≥ 3`（見 [workflow Step 0.5](MT5_Strategy_Research_Workflow.md)）|
+
+### 執行順序與提前中止
+
+**R2 → R3 → R4 → R6 → R5**（R5 純記錄，放最後）。
+
+任一關未達門檻即**停止後續關卡**並結案，不得以「再調一下參數看看」延續——那正是把隨機參數變成過度擬合的路徑。
+
+### 本序列的特殊性
+
+S10.3 的參數組是**由 bug 隨機產生、未經任何最佳化挑選**。這有兩面：
+
+- **有利**：它沒有被 in-sample 挑選過程污染，103 筆、6/6 年正不是挑櫻桃的結果。
+- **不利**：它同樣沒有被任何穩健性篩選過，落在尖峰上的機率不低。
+
+因此 **R4 參數敏感度是本序列資訊量最高的一關**，重要性高於一般流程中的位置。若鄰點全面崩壞，即使 R2/R3 通過，本線仍應結案。
+
 ## 7. 附錄：EA 行為與介面文件（2026-07-04 自 `Strategies/README.md` 移入，行為文件以本節為準）
 
 *   **功能**: 支撐/壓力通道 EA，可交易順勢突破、支撐/壓力反彈、SBR/RBS 回測進場，或突破+反彈混合。
