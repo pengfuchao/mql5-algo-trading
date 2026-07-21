@@ -20,7 +20,7 @@
 | 策略 | 研究紀錄 | 目前狀態 |
 |---|---|---|
 | PrecisionSniperEA | [PrecisionSniperEA.md](PrecisionSniperEA.md) | 研究中；USDJPY M15 短線為最佳候選，待 demo forward |
-| SR Channel Breakout | [Strategy_SR_Channel_Breakout.md](Strategy_SR_Channel_Breakout.md) | **S1–S7 作廢（`iCustom` 參數錯位，見 S10）**；晉級撤回、部署卡停用；真實參數組已還原並待從頭重驗 |
+| SR Channel Breakout | [Strategy_SR_Channel_Breakout.md](Strategy_SR_Channel_Breakout.md) | **全線結案（2026-07-22）**：S1–S7 因 `iCustom` 參數錯位作廢（S10）；還原真實參數後 R2/R3 通過但 R4 判定為刀鋒（§6.6）。晉級撤回、部署卡移除 |
 | Session Range / London Breakout | [Strategy_Session_Range.md](Strategy_Session_Range.md) | **結案**：USDJPY 通過 OOS 但成本關卡失敗（edge ~1 pip < commission ~0.9 pip） |
 | Time Window（FX 時段效應 / 黃金日內季節性）| [Strategy_Time_Window.md](Strategy_Time_Window.md) | **兩條線皆結案**：EURUSD 與 XAUUSD 均未通過；引擎保留供未來時間型研究復用 |
 

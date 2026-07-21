@@ -6,7 +6,7 @@
 
 | 分層 | 檔案 | 狀態 / 紀錄 |
 |---|---|---|
-| **研究管線** | `Strategy_SR_Channel_Breakout.mq5` | EURUSD H1 breakout 晉級 → [部署卡](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md)；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_SR_Channel_Breakout.md) |
+| **研究管線** | `Strategy_SR_Channel_Breakout.mq5` | **已結案（2026-07-22）**，晉級撤回；程式碼保留供未來時間型研究復用。研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_SR_Channel_Breakout.md) |
 | **研究管線** | `PrecisionSniperEA.mq5` | USDJPY M15 候選，待 demo forward；研究紀錄見 [Strategy_Records](../Strategy_Records/PrecisionSniperEA.md) |
 | **研究管線** | `Strategy_Session_Range.mq5` | **已結案**：GBPUSD/EURUSD 否定；USDJPY 通過 OOS 但成本關卡失敗；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_Session_Range.md) |
 | **研究原型** | `Strategy_Time_Window.mq5` | 定時進出引擎；**FX EURUSD 與 Gold XAUUSD 兩條研究線皆已結案否定**，EA 本身機械行為正常並保留作為純時間型研究引擎；研究紀錄見 [Strategy_Records](../Strategy_Records/Strategy_Time_Window.md) |
@@ -80,7 +80,7 @@
 
 *   **`Strategy_SR_Channel_Breakout.mq5`**
     *   **功能**: 支撐/壓力通道 EA（透過 `iCustom` 對接 `Indicators/Support_Resistance_Channels.mq5`），支援突破 / 反彈 / SBR-RBS 回測 / 混合四種訊號模式。
-    *   **現況**: 通用多商品研究已結案；**EURUSD H1 裸突破晉級**，設置寫死於[部署卡](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md)（含 `.set`），等待 demo forward。
+    *   **現況**: **全線結案（2026-07-22）**。S1–S7 因 `iCustom` 參數錯位而作廢，還原真實參數後重驗：樣本外與逐年通過，但參數敏感度判定為刀鋒（PF 與交易數單調反向）。EURUSD 晉級撤回、部署卡移除。詳見 [研究紀錄](../Strategy_Records/Strategy_SR_Channel_Breakout.md) §S10 與 §6.6。
     *   **詳細文件**: 完整行為與介面文件（buffer contract、fail-closed sizing、Netting ownership 防護、OnTester 評分、使用限制）見 [Strategy_Records/Strategy_SR_Channel_Breakout.md](../Strategy_Records/Strategy_SR_Channel_Breakout.md) 附錄（§7）。
 
 *   **`PrecisionSniperEA.mq5`**

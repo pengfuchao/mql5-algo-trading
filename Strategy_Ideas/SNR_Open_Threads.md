@@ -3,7 +3,7 @@
 更新日期：2026-06-30
 
 本檔是 SNR / SR Channel 研究的「**未走完方向**」總索引，方便下次打開 repo 一眼看到還能做什麼。
-背景：SR-channel 通用策略已結案，**EURUSD 專用 breakout 晉級**（見 [部署卡](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md)、[研究紀錄 S1–S7](../Strategy_Records/Strategy_SR_Channel_Breakout.md)）。以下方向多數可套用於提升 EURUSD 線或開新線。
+背景：**SR-channel 全線已於 2026-07-22 結案**（EURUSD 晉級撤回，部署卡移除）。以下方向原本是為了提升該線而列，目前**沒有宿主策略**；若日後重啟此概念，須先以多商品／多週期解決樣本不足問題，而非在 EURUSD H1 上繼續搜參數。見[研究紀錄](../Strategy_Records/Strategy_SR_Channel_Breakout.md) §6.6。
 
 詳細想法多數已在 [SNR_External_Ideas_Harvest.md](SNR_External_Ideas_Harvest.md) §2。
 
@@ -59,4 +59,4 @@ EURUSD baseline 只有 **約 16 筆/年（6 年 103 筆）**。`UseVolumeFilter`
 
 - [外部 SNR 想法彙整](SNR_External_Ideas_Harvest.md)
 - [研究紀錄 S1–S7](../Strategy_Records/Strategy_SR_Channel_Breakout.md)
-- [EURUSD 部署卡](../Strategy_Live_Candidates/SR_Channel_Breakout_EURUSD.md)
+- ~~EURUSD 部署卡~~（2026-07-22 隨結案移除，內容見 git 歷史）
